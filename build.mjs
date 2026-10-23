@@ -174,9 +174,7 @@ async function main() {
           ],
           root,
         );
-        const response = await fetch("https://api.github.com/meta");
-        if (!response.ok) throw new Error("Cannot obtain GitHub SSH host keys over HTTPS.");
-        const { ssh_keys: hosts } = await response.json();
+        const { ssh_keys: hosts } = JSON.parse(gh(["api", "meta"]));
         writeFileSync(knownHosts, hosts.map((host) => `github.com ${host}`).join("\n") + "\n");
         process.env.GIT_SSH_COMMAND = `ssh -i "${identity.replaceAll("\\", "/")}" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="${knownHosts.replaceAll("\\", "/")}"`;
         run("git", ["init", "source"], root);

@@ -204,6 +204,17 @@ async function main() {
       if (!platform || platform.platform !== process.platform || platform.arch !== process.arch)
         throw new Error("Runner does not match requested target.");
       console.log(`Building and exercising ${target} with Node absent and unusable.`);
+      if (platform.platform === "win32") {
+        run("node", ["scripts/build-cpu-supervisor.mjs"]);
+        run("pnpm", [
+          "exec",
+          "vitest",
+          "run",
+          "apps/cli/test/tui-cpu-pressure.test.ts",
+          "--reporter=dot",
+        ]);
+        console.log(`${target}: native CPU supervisor preflight passed.`);
+      }
       run("pnpm", ["pack:tui"]);
       run("pnpm", [
         "exec",
@@ -329,6 +340,31 @@ async function main() {
     appendFileSync(log, `${error.stack}\n`);
     throw error;
   } finally {
+    if (mode === "build") {
+      const smokes = path.join(source, ".tmp/sea", target, "standalone-smoke");
+      if (existsSync(smokes)) {
+        const directories = [
+          smokes,
+          ...readdirSync(smokes, { withFileTypes: true })
+            .filter((entry) => entry.isDirectory() && /^(?:no-node|old-node)-/.test(entry.name))
+            .map((entry) => path.join(smokes, entry.name)),
+        ];
+        for (const directory of directories)
+          for (const name of [
+            "terminal.ansi",
+            "requests.json",
+            "receipt.json",
+            "results.json",
+            "summary.json",
+          ]) {
+            const file = path.join(directory, name);
+            if (existsSync(file)) {
+              appendFileSync(log, `\n${path.relative(smokes, file)}\n`);
+              appendFileSync(log, readFileSync(file));
+            }
+          }
+      }
+    }
     const diagnostics = path.join(
       output,
       `${mode === "build" || mode === "checkout" ? target : "assemble"}.log.enc`,

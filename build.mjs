@@ -206,13 +206,19 @@ async function main() {
       console.log(`Building and exercising ${target} with Node absent and unusable.`);
       if (platform.platform === "win32") {
         run("node", ["scripts/build-cpu-supervisor.mjs"]);
-        run("pnpm", [
-          "exec",
-          "vitest",
-          "run",
-          "apps/cli/test/tui-cpu-pressure.test.ts",
-          "--reporter=dot",
-        ]);
+        const probe = spawnSync(
+          path.join(source, "apps/cli/dist/cpu-supervisor.exe"),
+          ["--probe"],
+          { encoding: "utf8", windowsHide: true },
+        );
+        appendFileSync(
+          log,
+          `${JSON.stringify({ probeExit: probe.status, probeStdout: probe.stdout, probeStderr: probe.stderr, probeError: probe.error?.message })}\n`,
+        );
+        if (probe.error || probe.status !== 0 || probe.stdout !== "cpu-supervisor-v2\n")
+          throw new Error(
+            "Native CPU supervisor probe preflight failed; diagnostics are encrypted.",
+          );
         console.log(`${target}: native CPU supervisor preflight passed.`);
       }
       run("pnpm", ["pack:tui"]);

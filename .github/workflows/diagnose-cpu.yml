@@ -68,9 +68,19 @@ jobs:
           const cwd=path.resolve('source');const log=path.join(process.env.RUNNER_TEMP,'cpu-diagnostic.log');
           const fd=fs.openSync(log,'w');const env={...process.env};delete env.GH_TOKEN;delete env.BUILD_ENCRYPTION_KEY;
           let status=0;
-          for(const [command,args] of [['corepack',['enable']],['corepack',['install']],['pnpm',['install','--frozen-lockfile']],['pnpm',['typecheck']],['node',['scripts/build-cpu-supervisor.mjs']],['pnpm',['exec','vitest','run','apps/cli/test/tui-cpu-pressure.test.ts','--reporter=verbose']]]) {
+          for(const [command,args] of [['corepack',['enable']],['corepack',['install']],['pnpm',['install','--frozen-lockfile']],['pnpm',['typecheck']],['node',['scripts/build-cpu-supervisor.mjs']],['pnpm',['exec','vitest','run','apps/cli/test/tui-cpu-pressure.test.ts','--reporter=verbose','-t','runs the real process and preserves its streams and exit code']]]) {
             const childEnv={...env};
             const result=spawnSync(command,args,{cwd,env:childEnv,shell:true,stdio:['ignore',fd,fd]});
+            if(args[0]==='scripts/build-cpu-supervisor.mjs'&&result.status===0){
+              const directory=path.join(fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'owner-check-')),'private');
+              const helper=path.join(cwd,'apps/cli/dist/cpu-supervisor.exe');
+              for(const flag of ['--prepare-peer-dir','--prepare-seat-files']){
+                const probe=spawnSync(helper,[flag,directory],{encoding:'utf8',env,stdio:['ignore',fd,fd]});
+                fs.writeSync(fd,JSON.stringify({flag,status:probe.status})+'\n');
+              }
+              const command='[Console]::Out.WriteLine([Security.Principal.WindowsIdentity]::GetCurrent().User.Value); foreach($p in @($env:OWNER_CHECK_DIRECTORY,(Join-Path $env:OWNER_CHECK_DIRECTORY "seat-0.lock"))) { [Console]::Out.WriteLine($p); $acl=Get-Acl -LiteralPath $p; [Console]::Out.WriteLine($acl.Owner); [Console]::Out.WriteLine($acl.Sddl) }';
+              spawnSync(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-Command',command],{env:{...env,OWNER_CHECK_DIRECTORY:directory},stdio:['ignore',fd,fd]});
+            }
             if(result.error||result.status!==0){status=result.status||1;break;}
           }
           fs.closeSync(fd);

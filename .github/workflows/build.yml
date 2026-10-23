@@ -53,12 +53,20 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: runner.os != 'Windows'
         with:
           repository: Simon-He95/best-agent
           ref: ${{ needs.prepare.outputs.sha }}
           ssh-key: ${{ secrets.SOURCE_SSH_KEY }}
           persist-credentials: false
           path: source
+      - name: Check out Windows source with a private-key ACL
+        if: runner.os == 'Windows'
+        run: node build.mjs checkout ${{ matrix.target }}
+        env:
+          SOURCE_SSH_KEY: ${{ secrets.SOURCE_SSH_KEY }}
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+          GH_TOKEN: ${{ github.token }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: source/.nvmrc

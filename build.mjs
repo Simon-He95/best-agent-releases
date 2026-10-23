@@ -9,6 +9,7 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -49,6 +50,7 @@ function run(command, args, cwd = source, privateOutput = true) {
   const env = { ...process.env };
   delete env.GH_TOKEN;
   delete env.BUILD_ENCRYPTION_KEY;
+  delete env.SOURCE_SSH_KEY;
   const fd = privateOutput ? openSync(log, "a") : undefined;
   const result = spawnSync(command, args, {
     cwd,
@@ -153,6 +155,41 @@ async function main() {
   }
   let published = false;
   try {
+    if (mode === "checkout") {
+      const identity = path.join(process.env.RUNNER_TEMP, "source-build.key");
+      const knownHosts = path.join(process.env.RUNNER_TEMP, "source-build.known_hosts");
+      writeFileSync(identity, `${process.env.SOURCE_SSH_KEY.trim()}\n`, { mode: 0o600 });
+      try {
+        run(
+          "icacls.exe",
+          [
+            identity,
+            "/inheritance:r",
+            "/grant:r",
+            `${process.env.USERDOMAIN}\\${process.env.USERNAME}:F`,
+            "/remove:g",
+            "*S-1-5-11",
+            "*S-1-5-32-545",
+            "*S-1-1-0",
+          ],
+          root,
+        );
+        const response = await fetch("https://api.github.com/meta");
+        if (!response.ok) throw new Error("Cannot obtain GitHub SSH host keys over HTTPS.");
+        const { ssh_keys: hosts } = await response.json();
+        writeFileSync(knownHosts, hosts.map((host) => `github.com ${host}`).join("\n") + "\n");
+        process.env.GIT_SSH_COMMAND = `ssh -i "${identity.replaceAll("\\", "/")}" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="${knownHosts.replaceAll("\\", "/")}"`;
+        run("git", ["init", "source"], root);
+        run("git", ["remote", "add", "origin", `git@github.com:${request.sourceRepository}.git`]);
+        run("git", ["fetch", "--depth=1", "origin", request.sourceSha]);
+        run("git", ["checkout", "--detach", "FETCH_HEAD"]);
+      } finally {
+        delete process.env.GIT_SSH_COMMAND;
+        rmSync(identity, { force: true });
+        rmSync(knownHosts, { force: true });
+      }
+      return;
+    }
     install();
     const { cliSeaTargets } = await import(
       pathToFileURL(path.join(source, "scripts/cli-sea-targets.mjs"))
@@ -292,7 +329,10 @@ async function main() {
     appendFileSync(log, `${error.stack}\n`);
     throw error;
   } finally {
-    const diagnostics = path.join(output, `${mode === "build" ? target : "assemble"}.log.enc`);
+    const diagnostics = path.join(
+      output,
+      `${mode === "build" || mode === "checkout" ? target : "assemble"}.log.enc`,
+    );
     if (existsSync(log)) {
       writeFileSync(diagnostics, seal(readFileSync(log), key()));
       // Successful assembly has already published its allowlisted assets.

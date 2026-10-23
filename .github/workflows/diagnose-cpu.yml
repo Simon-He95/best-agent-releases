@@ -29,6 +29,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - target: win32-arm64
+            runner: windows-11-arm
           - target: win32-x64
             runner: windows-2025
     runs-on: ${{ matrix.runner }}
@@ -66,7 +68,7 @@ jobs:
           const cwd=path.resolve('source');const log=path.join(process.env.RUNNER_TEMP,'cpu-diagnostic.log');
           const fd=fs.openSync(log,'w');const env={...process.env};delete env.GH_TOKEN;delete env.BUILD_ENCRYPTION_KEY;
           let status=0;
-          for(const [command,args] of [['corepack',['enable']],['corepack',['install']],['pnpm',['install','--frozen-lockfile']],['pnpm',['typecheck']],['node',['scripts/build-cpu-supervisor.mjs']],['pnpm',['exec','vitest','run','apps/cli/test/tui-cpu-pressure.test.ts','--reporter=verbose','-t','streams']]]) {
+          for(const [command,args] of [['corepack',['enable']],['corepack',['install']],['pnpm',['install','--frozen-lockfile']],['pnpm',['typecheck']],['node',['scripts/build-cpu-supervisor.mjs']],['pnpm',['exec','vitest','run','apps/cli/test/tui-cpu-pressure.test.ts','--reporter=verbose']]]) {
             const childEnv={...env};
             const result=spawnSync(command,args,{cwd,env:childEnv,shell:true,stdio:['ignore',fd,fd]});
             if(args[0]==='scripts/build-cpu-supervisor.mjs'&&result.status===0){

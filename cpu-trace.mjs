@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import {realpathSync} from 'node:fs';
 import path from 'node:path';
 import cp from 'node:child_process';
 import {syncBuiltinESMExports} from 'node:module';
@@ -8,7 +9,7 @@ for (const name of ['realpath','stat']) {
   fs[name]=async function(...args) {
     try {
       const value=await original.apply(this,args);
-      if(relevant(args[0])) console.error('PATH_TRACE',JSON.stringify({op:name,path:String(args[0]),value:name==='stat'?{directory:value.isDirectory()}:String(value)}));
+      if(relevant(args[0])) console.error('PATH_TRACE',JSON.stringify({op:name,path:String(args[0]),value:name==='stat'?{directory:value.isDirectory()}:String(value),...(name==='realpath'?{sync:realpathSync(args[0]),native:realpathSync.native(args[0])}:{})}));
       return value;
     } catch(error) {if(relevant(args[0])) console.error('PATH_TRACE',JSON.stringify({op:name,path:String(args[0]),error:String(error)}));throw error;}
   };

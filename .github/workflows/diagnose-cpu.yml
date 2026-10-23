@@ -1,9 +1,29 @@
 name: Diagnose Windows CPU paths
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+env:
+  DIAGNOSTIC_SOURCE_SHA: ${{ inputs.source_sha }}
 permissions:
   contents: write
 jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Select the diagnostic source commit
+        run: node -e "const fs=require('fs');const r=JSON.parse(fs.readFileSync('build-request.json'));r.sourceSha=process.env.DIAGNOSTIC_SOURCE_SHA;fs.writeFileSync('build-request.json',JSON.stringify(r))"
+      - run: node build.mjs prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
   diagnose:
+    needs: prepare
     if: github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
@@ -19,6 +39,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+      - name: Select the diagnostic source commit
+        run: node -e "const fs=require('fs');const r=JSON.parse(fs.readFileSync('build-request.json'));r.sourceSha=process.env.DIAGNOSTIC_SOURCE_SHA;fs.writeFileSync('build-request.json',JSON.stringify(r))"
       - run: node build.mjs checkout ${{ matrix.target }}
         env:
           SOURCE_SSH_KEY: ${{ secrets.SOURCE_SSH_KEY }}

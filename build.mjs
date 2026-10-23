@@ -293,7 +293,7 @@ async function main() {
           cpuSupervisor: true,
         });
       }
-      run("pnpm", ["release:cli", "--artifact-root", ".tmp/sea", "--dry-run"]);
+      run("pnpm", ["release:cli", "--artifact-root", ".tmp/sea", "--tag", "beta", "--dry-run"]);
       const stage = path.join(source, ".tmp/npm/release-stage");
       for (const id of [...cliSeaTargets.map((item) => item.id), "cli"])
         run("pnpm", ["pack", "--pack-destination", output], path.join(stage, id));

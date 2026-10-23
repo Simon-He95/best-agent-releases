@@ -244,6 +244,13 @@ async function main() {
         `${target}: installed native dependencies, Node-free TUI interaction and CPU supervisor checks passed.`,
       );
     } else if (mode === "assemble") {
+      run("pnpm", [
+        "exec",
+        "vitest",
+        "run",
+        "scripts/tests/cli-public-distribution.test.ts",
+        "--reporter=dot",
+      ]);
       const downloads = path.join(output, "downloads");
       mkdirSync(downloads, { recursive: true });
       gh([
@@ -256,6 +263,7 @@ async function main() {
         downloads,
       ]);
       const accepted = [];
+      const standaloneAssets = [];
       for (const platform of cliSeaTargets) {
         const metadata = JSON.parse(
           unseal(readFileSync(path.join(downloads, `${platform.id}.metadata.enc`)), key()),
@@ -281,6 +289,7 @@ async function main() {
         copyFileSync(path.join(bin, supervisor), path.join(dir, supervisor));
         writeFileSync(path.join(dir, "build-report.json"), metadata.report);
         writeFileSync(path.join(dir, "acceptance-evidence.json"), metadata.evidence);
+        standaloneAssets.push(name, `${name}.sha256`);
         accepted.push({
           target: platform.id,
           standaloneSha256: metadata.archive.sha256,
@@ -325,6 +334,31 @@ async function main() {
           process.env.GITHUB_REPOSITORY,
           "--yes",
         ]);
+      const expectedAssets = [
+        ...standaloneAssets,
+        ...files.map((file) => path.basename(file)),
+        path.basename(summary),
+        path.basename(sums),
+      ].sort();
+      const actualAssets = JSON.parse(
+        gh([
+          "release",
+          "view",
+          request.tag,
+          "--repo",
+          process.env.GITHUB_REPOSITORY,
+          "--json",
+          "assets",
+        ]),
+      )
+        .assets.map((asset) => asset.name)
+        .sort();
+      if (JSON.stringify(actualAssets) !== JSON.stringify(expectedAssets)) {
+        appendFileSync(log, `${JSON.stringify({ expectedAssets, actualAssets })}\n`);
+        throw new Error(
+          "Release asset set does not match the distribution; diagnostics are encrypted.",
+        );
+      }
       gh([
         "release",
         "edit",

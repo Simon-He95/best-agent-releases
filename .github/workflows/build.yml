@@ -1,0 +1,96 @@
+name: Build standalone TUI
+on:
+  push:
+    branches: [main]
+    paths: [build-request.json, build.mjs, .github/workflows/build.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: standalone-distribution
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.request.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: request
+        run: node build.mjs request
+      - run: node build.mjs prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+  build:
+    needs: prepare
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: linux-arm64-gnu
+            runner: ubuntu-24.04-arm
+          - target: linux-x64-gnu
+            runner: ubuntu-24.04
+          - target: win32-arm64
+            runner: windows-11-arm
+          - target: win32-x64
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Simon-He95/best-agent
+          ref: ${{ needs.prepare.outputs.sha }}
+          ssh-key: ${{ secrets.SOURCE_SSH_KEY }}
+          persist-credentials: false
+          path: source
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: source/.nvmrc
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        if: runner.os == 'Windows'
+        with:
+          arch: ${{ matrix.target == 'win32-arm64' && 'amd64_arm64' || 'x64' }}
+      - run: node build.mjs build ${{ matrix.target }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+  distribute:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Simon-He95/best-agent
+          ref: ${{ needs.prepare.outputs.sha }}
+          ssh-key: ${{ secrets.SOURCE_SSH_KEY }}
+          persist-credentials: false
+          path: source
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: source/.nvmrc
+      - run: node build.mjs assemble
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}

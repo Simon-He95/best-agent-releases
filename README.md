@@ -12,3 +12,64 @@ This repository contains distribution tooling and final artifacts. Application s
 Run `pnpm distribute:cli` from a clean source checkout. It pushes the source commit, synchronizes only the public tooling and `build-request.json`, and pushes this repository to trigger CI. Watch the Actions run for completion. A failed target leaves an unpublished draft.
 
 Only trusted pushes to `main` and manual runs on `main` can build. CI uses a read-only source deploy key. Raw build output and validation metadata are encrypted with AES-256-GCM; encrypted staging assets are removed before a successful Release is published. No source checkout, source maps, raw logs or internal build reports are uploaded as public release assets. The embedded JavaScript inside a SEA is still part of the distributed program.
+
+## Manual npm publication
+
+`publish.yml` has only a manual trigger and defaults to `dry_run=true`. It accepts an existing Release tag, never builds application source, and needs no source deploy key or build encryption key. Before any npm write it verifies the published Release's exact assets and GitHub digests, the historical source request, a successful trusted `build.yml` run with all six native jobs and distribution successful, all six acceptance records, checksums, package identities, and the launcher's exact six platform dependencies. A draft, failed build, missing target, altered bytes, or conflicting registry version blocks publication.
+
+After `pnpm distribute:cli` and a successful build, preview the selected Release (replace the example tag with the actual tag):
+
+```sh
+gh workflow run publish.yml --repo Simon-He95/best-agent-releases --ref main \
+  -f release_tag=cli-v0.0.17-beta.1-0123456789ab -f npm_tag=beta -f dry_run=true
+gh run watch --repo Simon-He95/best-agent-releases --exit-status
+```
+
+Only when ready to publish, run the same command with `-f dry_run=false`. Six platform packages publish first; the launcher publishes last. All seven package versions are preflighted before the first write. After an interrupted publish, rerun with the same Release and channel: only byte-identical existing versions already on that channel are skipped. Conflicting bytes or a different existing dist-tag fail before publication; dist-tag promotion is a separate explicit npm operation. Use `npm_tag=latest` only for a stable version without a prerelease suffix.
+
+### npm permissions
+
+Use [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) rather than adding an npm token to this repository. On npmjs.com, open each package's **Settings → Trusted publishing → GitHub Actions** and configure:
+
+| Field | Value |
+| --- | --- |
+| Organization or user | `Simon-He95` |
+| Repository | `best-agent-releases` |
+| Workflow filename | `publish.yml` (without `.github/workflows/`) |
+| Environment name | Leave empty; the workflow does not declare an environment |
+| Allowed actions | Enable direct `npm publish`; this workflow does not use `npm stage publish` or `npm dist-tag` |
+
+Apply this to all seven packages:
+
+- `@best-agent/cli`
+- `@best-agent/cli-darwin-arm64`
+- `@best-agent/cli-darwin-x64`
+- `@best-agent/cli-linux-arm64-gnu`
+- `@best-agent/cli-linux-x64-gnu`
+- `@best-agent/cli-win32-arm64`
+- `@best-agent/cli-win32-x64`
+
+The workflow uses GitHub-hosted runners, Node 24.15.0, npm 11.21.1, and `id-token: write`. Generated packages identify this public distribution repository for OIDC/provenance; older Release tarballs without that metadata are rejected and must not be silently repacked. Build a new source commit to obtain compatible tarballs.
+
+An npm account with package administration rights must configure each trusted publisher. Newly configured trusted publishers must complete a successful publication within two days or be recreated; a dry run does not validate the connection. Configure authorization close to the intended real publication date.
+
+Alternatively, with npm 11.21.1 and a logged-in maintainer account, configure all seven existing packages from the terminal (this changes permissions, not package versions):
+
+```sh
+npm login --registry=https://registry.npmjs.org
+for package in \
+  @best-agent/cli \
+  @best-agent/cli-darwin-arm64 \
+  @best-agent/cli-darwin-x64 \
+  @best-agent/cli-linux-arm64-gnu \
+  @best-agent/cli-linux-x64-gnu \
+  @best-agent/cli-win32-arm64 \
+  @best-agent/cli-win32-x64
+do
+  npm trust github "$package" --repo Simon-He95/best-agent-releases \
+    --file publish.yml --allow-publish --yes --registry=https://registry.npmjs.org || break
+  sleep 2
+done
+```
+
+Complete npm's 2FA prompts. Existing trusted publisher settings should be inspected before adding this connection; do not revoke other publishers as part of this setup.

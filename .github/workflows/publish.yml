@@ -1,0 +1,48 @@
+name: Publish npm packages
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing six-platform GitHub Release tag
+        required: true
+        type: string
+      npm_tag:
+        description: npm distribution channel
+        default: beta
+        type: choice
+        options: [beta, latest]
+      dry_run:
+        description: Validate and preview only; do not publish to npm
+        default: true
+        type: boolean
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: npm-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.15.0
+          registry-url: https://registry.npmjs.org
+      - run: npm install --global npm@11.21.1 --ignore-scripts
+      - name: Verify accepted release and publish platform packages before launcher
+        run: node publish.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          NPM_TAG: ${{ inputs.npm_tag }}
+          PUBLISH_DRY_RUN: ${{ inputs.dry_run }}

@@ -27,6 +27,8 @@ gh run watch --repo Simon-He95/best-agent-releases --exit-status
 
 Only when ready to publish, run the same command with `-f dry_run=false`. Six platform packages publish first; the launcher publishes last. All seven package versions are preflighted before the first write. After an interrupted publish, rerun with the same Release and channel: only byte-identical existing versions already on that channel are skipped. Conflicting bytes or a different existing dist-tag fail before publication; dist-tag promotion is a separate explicit npm operation. Use `npm_tag=latest` only for a stable version without a prerelease suffix.
 
+npm [scans new uploads before making them installable](https://github.blog/changelog/2026-07-28-npm-publish-time-malware-scanning-and-dual-use-metadata/). A successful `npm publish` response can precede registry visibility by several minutes. The workflow waits for all six platform versions, matching tarball integrity and channel, before publishing the launcher, then waits for the launcher too. These waits share a 45-minute deadline; the job has a 60-minute timeout. A retry returning `E409` for the same previously staged version enters the same visibility and integrity checks; it never counts as proof of successful publication on its own. Dry runs perform no availability wait. A timeout leaves the accepted uploads intact and reports the pending packages; it does not approve/reject staged packages or bypass npm scanning.
+
 ### npm permissions
 
 Use [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) rather than adding an npm token to this repository. On npmjs.com, open each package's **Settings → Trusted publishing → GitHub Actions** and configure:

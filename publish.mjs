@@ -30,6 +30,60 @@ function hash(file, algorithm = "sha256", encoding = "hex") {
   return createHash(algorithm).update(readFileSync(file)).digest(encoding);
 }
 
+function isPublished(entry, version, npmTag) {
+  const result = spawnSync(
+    "npm",
+    [
+      "view",
+      `${entry.name}@${version}`,
+      "dist.integrity",
+      "--json",
+      "--prefer-online",
+      `--registry=${registry}`,
+    ],
+    { encoding: "utf8" },
+  );
+  if (result.error) throw result.error;
+  const response = JSON.parse(result.stdout || "{}");
+  if (result.status !== 0) {
+    if (response.error?.code === "E404") return false;
+    throw new Error(`Registry preflight failed: ${entry.name}: ${result.stderr || result.stdout}`);
+  }
+  if (response !== `sha512-${hash(entry.file, "sha512", "base64")}`)
+    throw new Error(`Registry already contains different bytes: ${entry.name}@${version}`);
+  const currentTag = JSON.parse(
+    run("npm", [
+      "view",
+      entry.name,
+      `dist-tags.${npmTag}`,
+      "--json",
+      "--prefer-online",
+      `--registry=${registry}`,
+    ]) || "null",
+  );
+  if (currentTag !== version)
+    throw new Error(
+      `Existing ${entry.name}@${version} is not tagged ${npmTag}; update its dist-tag explicitly.`,
+    );
+  return true;
+}
+
+async function waitForRegistry(entries, version, npmTag, deadline) {
+  let pending = entries.filter((entry) => !entry.exists);
+  while (pending.length) {
+    pending = pending.filter((entry) => !isPublished(entry, version, npmTag));
+    if (!pending.length) return;
+    if (Date.now() >= deadline)
+      throw new Error(
+        `npm publish-time scanning did not finish: ${pending.map(({ name }) => name).join(", ")}. Wait for registry visibility before retrying; do not change the tarballs.`,
+      );
+    console.log(
+      `Waiting for npm publish-time scanning: ${pending.map(({ name }) => name).join(", ")}`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 15_000));
+  }
+}
+
 async function main() {
   if (
     process.env.GITHUB_REPOSITORY !== repository ||
@@ -157,46 +211,11 @@ async function main() {
   }
 
   // A failed multi-package publish may be resumed only with byte-identical registry versions.
-  for (const entry of packages) {
-    const result = spawnSync(
-      "npm",
-      [
-        "view",
-        `${entry.name}@${request.version}`,
-        "dist.integrity",
-        "--json",
-        `--registry=${registry}`,
-      ],
-      { encoding: "utf8" },
-    );
-    if (result.error) throw result.error;
-    const response = JSON.parse(result.stdout || "{}");
-    entry.exists = result.status === 0;
-    if (entry.exists) {
-      if (response !== `sha512-${hash(entry.file, "sha512", "base64")}`)
-        throw new Error(
-          `Registry already contains different bytes: ${entry.name}@${request.version}`,
-        );
-      const currentTag = JSON.parse(
-        run("npm", [
-          "view",
-          entry.name,
-          `dist-tags.${npmTag}`,
-          "--json",
-          `--registry=${registry}`,
-        ]) || "null",
-      );
-      if (currentTag !== request.version)
-        throw new Error(
-          `Existing ${entry.name}@${request.version} is not tagged ${npmTag}; update its dist-tag explicitly.`,
-        );
-    } else if (response.error?.code !== "E404") {
-      throw new Error(
-        `Registry preflight failed: ${entry.name}: ${result.stderr || result.stdout}`,
-      );
-    }
-  }
-  for (const entry of packages) {
+  for (const entry of packages) entry.exists = isPublished(entry, request.version, npmTag);
+  const deadline = Date.now() + 45 * 60_000;
+  for (const [index, entry] of packages.entries()) {
+    if (!dryRun && index === targets.length)
+      await waitForRegistry(packages.slice(0, targets.length), request.version, npmTag, deadline);
     if (entry.exists) {
       console.log(`Already published with matching integrity: ${entry.name}@${request.version}`);
       continue;
@@ -211,8 +230,21 @@ async function main() {
       "--ignore-scripts",
     ];
     if (dryRun) args.push("--dry-run");
-    console.log(run("npm", args));
+    const result = spawnSync("npm", args, { encoding: "utf8" });
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+      if (
+        !dryRun &&
+        result.stderr.includes("npm error code E409") &&
+        result.stderr.includes(`Cannot publish over previously staged version "${request.version}"`)
+      )
+        console.log(
+          `npm already accepted ${entry.name}@${request.version}; awaiting scanning and integrity verification.`,
+        );
+      else throw new Error(`npm failed: ${result.stderr || result.stdout}`);
+    } else console.log(result.stdout);
   }
+  if (!dryRun) await waitForRegistry(packages.slice(-1), request.version, npmTag, deadline);
   const summary = `${dryRun ? "Previewed" : "Published"} seven npm packages for ${tag} (${npmTag}). Build: https://github.com/${repository}/actions/runs/${build.id}\n`;
   console.log(summary);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);

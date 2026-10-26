@@ -1,0 +1,51 @@
+name: Verify existing native artifacts
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact producer commit of the six existing artifacts
+        required: true
+        type: string
+      verifier_sha:
+        description: Exact private verifier tooling commit
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: native-read-helper-verification
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Write exact producer request and validate verifier identity
+        env:
+          PRODUCER_SHA: ${{ inputs.source_sha }}
+          VERIFIER_SHA: ${{ inputs.verifier_sha }}
+          REQUEST_VERSION: ${{ inputs.version }}
+        run: node -e 'if(!/^[a-f0-9]{40}$/.test(process.env.VERIFIER_SHA))throw Error("Exact verifier commit required");require("fs").writeFileSync("build-request.json",JSON.stringify({sourceRepository:"Simon-He95/best-agent",sourceSha:process.env.PRODUCER_SHA,version:process.env.REQUEST_VERSION}))'
+      - run: node build.mjs request
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: Simon-He95/best-agent
+          ref: ${{ inputs.verifier_sha }}
+          ssh-key: ${{ secrets.SOURCE_SSH_KEY }}
+          persist-credentials: false
+          path: source
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: source/.nvmrc
+      - run: node source/scripts/public-distribution/build.mjs verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+          VERIFIER_SOURCE_SHA: ${{ inputs.verifier_sha }}

@@ -1,0 +1,39 @@
+name: Export encrypted native diagnostics
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        required: true
+        type: string
+      assets:
+        required: true
+        type: string
+      recipient_key:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  reseal:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.15.0
+      - run: node native-diagnostics.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+          DIAGNOSTIC_TAG: ${{ inputs.tag }}
+          DIAGNOSTIC_ASSETS: ${{ inputs.assets }}
+          RECIPIENT_KEY: ${{ inputs.recipient_key }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-resealed-diagnostics
+          path: ${{ runner.temp }}/native-resealed-diagnostics
+          retention-days: 1
+          if-no-files-found: error

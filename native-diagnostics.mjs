@@ -49,7 +49,7 @@ for (const asset of assets) {
       "--dir",
       input,
     ],
-    { stdio: "ignore" },
+    { stdio: ["ignore", "ignore", "inherit"] },
   );
   const plaintext = unseal(readFileSync(path.join(input, asset)), key);
   const transferKey = randomBytes(32);

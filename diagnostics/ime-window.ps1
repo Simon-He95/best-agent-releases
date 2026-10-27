@@ -51,8 +51,13 @@ function Info($label) {
   Write-Output "$label foreground=$foreground terminal=$h pid=$processId keyboard=$([GuiProbe]::GetKeyboardLayout($thread))"
   if ($foreground -ne $h) { throw 'Terminal window did not receive focus; cannot validate input' }
 }
-Info 'before'
-Snapshot 'ime-before.png'
+Info 'before-chat'
+[System.Windows.Forms.SendKeys]::SendWait('hello')
+Start-Sleep -Seconds 1
+[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+Start-Sleep -Seconds 12
+Info 'chat-page'
+Snapshot 'ime-chat-before.png'
 [GuiProbe]::keybd_event(0x5B,0,0,[UIntPtr]::Zero)
 [GuiProbe]::keybd_event(0x20,0,0,[UIntPtr]::Zero)
 [GuiProbe]::keybd_event(0x20,0,2,[UIntPtr]::Zero)
@@ -61,8 +66,8 @@ Start-Sleep -Seconds 3
 Info 'after-language-switch'
 [System.Windows.Forms.SendKeys]::SendWait('nihao')
 Start-Sleep -Seconds 2
-Snapshot 'ime-composition.png'
+Snapshot 'ime-chat-composition.png'
 [System.Windows.Forms.SendKeys]::SendWait(' ')
 Start-Sleep -Seconds 2
-Snapshot 'ime-commit.png'
+Snapshot 'ime-chat-commit.png'
 Write-Output 'Screenshots are observational evidence only. Confirm Chinese IME activation and compare composition and committed text before interpreting.'

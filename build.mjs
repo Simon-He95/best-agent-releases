@@ -8,6 +8,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  statSync,
   readdirSync,
   rmSync,
   writeFileSync,
@@ -220,6 +221,8 @@ async function main() {
         console.log(`${target}: native CPU supervisor preflight passed.`);
       }
       run("pnpm", ["pack:tui"]);
+      if (/^Error: AttachConsole failed\r?$/m.test(readFileSync(log, "utf8")))
+        throw new Error("ConPTY cleanup emitted an exception; diagnostics are encrypted.");
       run("pnpm", [
         "exec",
         "vitest",
@@ -227,15 +230,165 @@ async function main() {
         "apps/cli/test/tui-cpu-pressure.test.ts",
         "--reporter=dot",
       ]);
+      run("pnpm", [
+        "exec",
+        "vitest",
+        "run",
+        "packages/model-binding-ai-sdk/tests/input-window.test.ts",
+        "packages/model-binding-ai-sdk/tests/tool-text-budget.test.ts",
+        "packages/model-binding-ai-sdk/tests/tool-call-wire-boundaries.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+      ]);
+      run("node", ["scripts/experiments/rust-boundaries/bench.mjs", "prepare-node"]);
+      const textSemanticsFile = path.join(source, ".tmp/rust-boundaries/text-semantics.json");
+      const textResourcesFile = path.join(source, ".tmp/rust-boundaries/text-resources.json");
+      run("node", [
+        "scripts/experiments/rust-boundaries/bench.mjs",
+        "verify-node",
+        "nodeFast",
+        "text-small",
+        textSemanticsFile,
+      ]);
+      run("node", [
+        "scripts/experiments/rust-boundaries/bench.mjs",
+        "campaign-node",
+        "3",
+        "40",
+        textResourcesFile,
+      ]);
+      const textEstimator = {
+        status: "passed",
+        semantics: JSON.parse(readFileSync(textSemanticsFile, "utf8")),
+        ...JSON.parse(readFileSync(textResourcesFile, "utf8")),
+      };
       const dir = path.join(source, ".tmp/sea", target);
       const name = `best-agent-${request.version}-${target}.${platform.platform === "win32" ? "zip" : "tar.gz"}`;
       const archive = path.join(dir, name);
+      let nativeReadHelper;
+      let resourcePairs;
+      let nativeLargeReads;
+      let largeReadResources;
+      if (platform.platform !== "win32") {
+        process.env.RUST_READ_HELPER = path.join(source, "apps/cli/dist/workspace-read-helper");
+        try {
+          run("pnpm", [
+            "exec",
+            "vitest",
+            "run",
+            "packages/sandbox-host/tests/rust-read-helper.test.ts",
+            "--maxWorkers=1",
+            "--minWorkers=1",
+          ]);
+        } finally {
+          delete process.env.RUST_READ_HELPER;
+        }
+        const installed = path.join(source, ".tmp/native-helper-installed");
+        mkdirSync(installed, { recursive: true });
+        run("tar", ["-xzf", archive, "-C", installed]);
+        const capture = path.join(dir, "native-helper-installed.json");
+        run("node", [
+          "scripts/experiments/rust-read-helper/installed.mjs",
+          path.join(installed, `best-agent-${request.version}-${target}`, "bin", platform.binary),
+          "-",
+          capture,
+        ]);
+        const largeInstalled = path.join(dir, "large-read-installed.json");
+        const largeBridge = path.join(dir, "large-read-bridge.json");
+        run("node", [
+          "scripts/experiments/rust-boundaries/installed-large.mjs",
+          path.join(installed, `best-agent-${request.version}-${target}`, "bin", platform.binary),
+          "-",
+          largeInstalled,
+        ]);
+        run("node", [
+          "scripts/experiments/rust-boundaries/installed-large.mjs",
+          "bridge",
+          "-",
+          largeBridge,
+        ]);
+        nativeLargeReads = {
+          installed: JSON.parse(readFileSync(largeInstalled, "utf8")).verification,
+          bridge: JSON.parse(readFileSync(largeBridge, "utf8")).verification,
+        };
+        const largeMeasurements = path.join(dir, "large-read-resources.jsonl");
+        process.env.BENCH_WORKLOADS = "full-small,full-unicode,full-escaped,bytes-binaryLimit";
+        try {
+          run("python3", [
+            "-c",
+            "import subprocess,sys; f=open(sys.argv[1],'w'); subprocess.run(['python3',sys.argv[2],'3','40'],stdout=f,check=True)",
+            largeMeasurements,
+            platform.platform === "darwin"
+              ? "scripts/experiments/rust-boundaries/resources.py"
+              : "scripts/experiments/rust-boundaries/linux-resources.py",
+          ]);
+        } finally {
+          delete process.env.BENCH_WORKLOADS;
+        }
+        largeReadResources = readFileSync(largeMeasurements, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line))
+          .filter((row) => row.arm);
+        if (largeReadResources.length !== 24)
+          throw new Error("Incomplete large-read resource campaign.");
+        for (const workload of new Set(largeReadResources.map((row) => row.workload))) {
+          if (
+            new Set(
+              largeReadResources
+                .filter((row) => row.workload === workload)
+                .map((row) => row.first.resultHash),
+            ).size !== 1
+          )
+            throw new Error(`Large-read reports differ for ${workload}.`);
+        }
+        nativeReadHelper = JSON.parse(readFileSync(capture, "utf8")).verification;
+        if (nativeReadHelper?.status !== "passed")
+          throw new Error("Installed native helper verification receipt is missing.");
+        run("node", ["scripts/experiments/rust-read-helper/bench.mjs", "freeze", "current"]);
+        run("node", ["scripts/experiments/rust-read-helper/bench.mjs", "prepare"]);
+        const measurements = path.join(dir, "read-helper-resources.jsonl");
+        process.env.BENCH_WORKLOADS = "small,unicode,list-large,search-sparse";
+        try {
+          run("python3", [
+            "-c",
+            "import subprocess,sys; f=open(sys.argv[1],'w'); subprocess.run(['python3',sys.argv[2],'3','100'],stdout=f,check=True)",
+            measurements,
+            platform.platform === "darwin"
+              ? "scripts/experiments/rust-read-helper/resources.py"
+              : "scripts/experiments/rust-read-helper/linux-resources.py",
+          ]);
+        } finally {
+          delete process.env.BENCH_WORKLOADS;
+        }
+        resourcePairs = readFileSync(measurements, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line))
+          .filter((row) => row.arm);
+        if (resourcePairs.length !== 24)
+          throw new Error("Incomplete paired native-helper resource campaign.");
+        for (const workload of new Set(resourcePairs.map((row) => row.workload))) {
+          const rows = resourcePairs.filter((row) => row.workload === workload);
+          if (
+            new Set(rows.map((row) => row.first.resultHash)).size !== 1 ||
+            new Set(rows.map((row) => row.first.resultBytes)).size !== 1
+          ) {
+            throw new Error(`Paired native-helper reports differ for ${workload}.`);
+          }
+        }
+      }
       const metadata = {
         sourceSha: request.sourceSha,
         target,
         archive: { name, sha256: digest(archive) },
         report: readFileSync(path.join(dir, "build-report.json"), "utf8"),
         evidence: readFileSync(path.join(dir, "acceptance-evidence.json"), "utf8"),
+        standaloneSize: JSON.parse(readFileSync(path.join(dir, "standalone-size.json"), "utf8")),
+        ...(nativeReadHelper === undefined ? {} : { nativeReadHelper }),
+        textEstimator,
+        ...(nativeLargeReads === undefined ? {} : { nativeLargeReads, largeReadResources }),
+        ...(resourcePairs === undefined ? {} : { resourcePairs }),
       };
       const sealed = path.join(output, `${target}.metadata.enc`);
       writeFileSync(sealed, seal(Buffer.from(JSON.stringify(metadata)), key()));
@@ -243,7 +396,7 @@ async function main() {
       console.log(
         `${target}: installed native dependencies, Node-free TUI interaction and CPU supervisor checks passed.`,
       );
-    } else if (mode === "assemble") {
+    } else if (mode === "assemble" || mode === "verify") {
       run("pnpm", [
         "exec",
         "vitest",
@@ -277,6 +430,18 @@ async function main() {
           metadata.archive.sha256 !== digest(path.join(downloads, name))
         )
           throw new Error(`Artifact binding failed for ${platform.id}.`);
+        const size = metadata.standaloneSize;
+        if (
+          size?.target !== platform.id ||
+          size.archiveBytes !== statSync(path.join(downloads, name)).size ||
+          !(size.baselineArchiveBytes > size.archiveBytes) ||
+          size.retainedBytesAndModesIdentical !== true ||
+          size.executableBytesAndModesIdentical !== true ||
+          size.pairedRenderingOutputs !== 21 ||
+          size.malformedSourceUnchanged !== true ||
+          (platform.platform === "win32" && size.pairedConptyText !== true)
+        )
+          throw new Error(`Missing paired standalone size/render evidence for ${platform.id}.`);
         const extracted = path.join(output, platform.id);
         mkdirSync(extracted, { recursive: true });
         if (extension === "zip") run("unzip", ["-q", path.join(downloads, name), "-d", extracted]);
@@ -287,6 +452,45 @@ async function main() {
         const supervisor = platform.platform === "win32" ? "cpu-supervisor.exe" : "cpu-supervisor";
         copyFileSync(path.join(bin, platform.binary), path.join(dir, platform.binary));
         copyFileSync(path.join(bin, supervisor), path.join(dir, supervisor));
+        if (JSON.parse(metadata.report).artifact.workspaceReadHelperBytes > 0) {
+          copyFileSync(
+            path.join(bin, "workspace-read-helper"),
+            path.join(dir, "workspace-read-helper"),
+          );
+        }
+        if (
+          mode === "verify" &&
+          platform.platform !== "win32" &&
+          metadata.nativeReadHelper?.status !== "passed"
+        ) {
+          throw new Error(`Missing native helper execution evidence for ${platform.id}.`);
+        }
+        if (
+          mode === "verify" &&
+          platform.platform !== "win32" &&
+          (!Array.isArray(metadata.resourcePairs) || metadata.resourcePairs.length !== 24)
+        ) {
+          throw new Error(`Missing paired native resource evidence for ${platform.id}.`);
+        }
+        if (
+          mode === "verify" &&
+          (metadata.textEstimator?.status !== "passed" ||
+            metadata.textEstimator.semantics?.cases !== 2556 ||
+            metadata.textEstimator.semantics.rawAndProjectionExact !== true ||
+            metadata.textEstimator.rows?.length !== 12)
+        )
+          throw new Error(`Missing text-estimator boundary evidence for ${platform.id}.`);
+        if (
+          mode === "verify" &&
+          platform.platform !== "win32" &&
+          (metadata.nativeLargeReads?.installed?.status !== "passed" ||
+            metadata.nativeLargeReads.installed.terminalSnapshotExact !== true ||
+            metadata.nativeLargeReads.installed.nativeObservedAtRequests?.join(",") !== "2,3" ||
+            metadata.nativeLargeReads.bridge?.status !== "passed" ||
+            metadata.nativeLargeReads.bridge.reopenedRawStoreExact !== true ||
+            metadata.largeReadResources?.length !== 24)
+        )
+          throw new Error(`Missing large-read boundary evidence for ${platform.id}.`);
         writeFileSync(path.join(dir, "build-report.json"), metadata.report);
         writeFileSync(path.join(dir, "acceptance-evidence.json"), metadata.evidence);
         standaloneAssets.push(name, `${name}.sha256`);
@@ -296,11 +500,62 @@ async function main() {
           nodeAbsent: true,
           unusableNode: true,
           nativeDependencySmoke: true,
+          standaloneSize: metadata.standaloneSize,
           interactiveTui: true,
           cpuSupervisor: true,
+          textEstimator: metadata.textEstimator,
+          ...(metadata.nativeLargeReads === undefined
+            ? {}
+            : {
+                nativeLargeReads: metadata.nativeLargeReads,
+                largeReadResources: metadata.largeReadResources.map((row) => ({
+                  workload: row.workload,
+                  arm: row.arm,
+                  round: row.round,
+                  iterations: row.iterations,
+                  firstHash: row.first.resultHash,
+                  p50Ms: row.p50Ms,
+                  p95Ms: row.p95Ms,
+                  treeCpuMs: row.treeCpuMs,
+                  treeRssPeak: row.treeRssPeak,
+                  ...(row.treePssPeak === undefined
+                    ? { treeFootprintPeak: row.treeFootprintPeak }
+                    : { treePssPeak: row.treePssPeak }),
+                })),
+              }),
+          ...(metadata.nativeReadHelper === undefined
+            ? {}
+            : { nativeReadHelper: metadata.nativeReadHelper }),
+          ...(metadata.resourcePairs === undefined
+            ? {}
+            : {
+                resources: metadata.resourcePairs.map((row) => ({
+                  workload: row.workload,
+                  arm: row.arm,
+                  round: row.round,
+                  iterations: row.iterations,
+                  p50Ms: row.p50Ms,
+                  p95Ms: row.p95Ms,
+                  treeCpuMs: row.treeCpuMs,
+                  treeRssPeak: row.treeRssPeak,
+                  ...(row.unavailableChildSamples === undefined
+                    ? {}
+                    : { unavailableChildSamples: row.unavailableChildSamples }),
+                  ...(row.treePssPeak === undefined
+                    ? { treeFootprintPeak: row.treeFootprintPeak }
+                    : { treePssPeak: row.treePssPeak }),
+                })),
+              }),
         });
       }
-      run("pnpm", ["release:cli", "--artifact-root", ".tmp/sea", "--tag", "beta", "--dry-run"]);
+      run("pnpm", [
+        "release:cli",
+        "--artifact-root",
+        ".tmp/sea",
+        "--tag",
+        "beta",
+        mode === "verify" ? "--verify-only" : "--dry-run",
+      ]);
       const stage = path.join(source, ".tmp/npm/release-stage");
       for (const id of [...cliSeaTargets.map((item) => item.id), "cli"])
         run("pnpm", ["pack", "--pack-destination", output], path.join(stage, id));
@@ -311,7 +566,7 @@ async function main() {
       const summary = path.join(output, "acceptance.json");
       writeFileSync(
         summary,
-        `${JSON.stringify({ version: request.version, sourceSha: request.sourceSha, npmPublished: false, targets: accepted }, null, 2)}\n`,
+        `${JSON.stringify({ version: request.version, sourceSha: request.sourceSha, ...(process.env.VERIFIER_SOURCE_SHA ? { verifierSourceSha: process.env.VERIFIER_SOURCE_SHA } : {}), npmPublished: false, targets: accepted }, null, 2)}\n`,
       );
       const sums = path.join(output, "SHA256SUMS");
       const archives = readdirSync(downloads)
@@ -358,6 +613,12 @@ async function main() {
         throw new Error(
           "Release asset set does not match the distribution; diagnostics are encrypted.",
         );
+      }
+      if (mode === "verify") {
+        console.log(
+          `Six-platform candidate verified; Release remains draft and npm publication is disabled: ${request.tag}`,
+        );
+        return;
       }
       gh([
         "release",

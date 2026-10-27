@@ -9,6 +9,8 @@ This repository contains distribution tooling and final artifacts. Application s
 
 ## Maintainers
 
+`native-read-helper.yml` is a manual, verification-only six-platform build. Supply an exact private `source_sha` and matching CLI `version`. It writes requests only inside each runner checkout, leaves the tracked public build request unchanged, uses the exact private candidate's build driver with encrypted diagnostics, and keeps the resulting Release draft. It never invokes npm publication or the normal distribution publication step. POSIX runners additionally assert native helper execution, source errors and permission denial in the installed standalone CLI; Windows retains its unsupported sandbox filesystem behavior. A successful verification is evidence for the private integration, not a product default switch.
+
 For a full release, run `pnpm release:tui [version]` from the private source repository's clean `main` checkout. Omitting the version opens the bumpp version selector using the current remote-synchronized CLI version; choosing a version continues the release and cancelling stops it. The selector does not modify files. It fast-forwards main, commits the CLI version, calls `distribute:cli`, waits for the exact six-platform build, then dispatches this repository's existing `publish.yml` and waits until npm versions pass visibility, integrity and channel checks. Prerelease versions use `beta`; stable versions use `latest`. Use `pnpm release:tui [version] --dry-run` to print the plan without changing the version, committing, pushing or dispatching any workflow. Keep the command running between phases. It requires authenticated GitHub CLI 2.92+ and the existing seven trusted publisher connections, with no local npm login or token. A failed step stops the chain. After interruption, let an already-running CI finish before retrying. When main still points at the same release commit, rerunning with the same explicit version reuses an accepted Release without another version bump or native rebuild; if main has advanced, recover the original Release through `publish.yml` rather than reusing its npm version for different source.
 
 Run `pnpm distribute:cli` from a clean source checkout. It pushes the source commit, synchronizes only the public tooling and `build-request.json`, and pushes this repository to trigger CI. Watch the Actions run for completion. A failed target leaves an unpublished draft.
@@ -35,13 +37,13 @@ npm [scans new uploads before making them installable](https://github.blog/chang
 
 Use [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) rather than adding an npm token to this repository. On npmjs.com, open each package's **Settings → Trusted publishing → GitHub Actions** and configure:
 
-| Field | Value |
-| --- | --- |
-| Organization or user | `Simon-He95` |
-| Repository | `best-agent-releases` |
-| Workflow filename | `publish.yml` (without `.github/workflows/`) |
-| Environment name | Leave empty; the workflow does not declare an environment |
-| Allowed actions | Enable direct `npm publish`; this workflow does not use `npm stage publish` or `npm dist-tag` |
+| Field                | Value                                                                                         |
+| -------------------- | --------------------------------------------------------------------------------------------- |
+| Organization or user | `Simon-He95`                                                                                  |
+| Repository           | `best-agent-releases`                                                                         |
+| Workflow filename    | `publish.yml` (without `.github/workflows/`)                                                  |
+| Environment name     | Leave empty; the workflow does not declare an environment                                     |
+| Allowed actions      | Enable direct `npm publish`; this workflow does not use `npm stage publish` or `npm dist-tag` |
 
 Apply this to all seven packages:
 

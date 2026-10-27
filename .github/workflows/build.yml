@@ -74,6 +74,8 @@ jobs:
         if: runner.os == 'Windows'
         with:
           arch: ${{ matrix.target == 'win32-arm64' && 'amd64_arm64' || 'x64' }}
+      - uses: dtolnay/rust-toolchain@1.84.0
+        if: runner.os != 'Windows'
       - run: node build.mjs build ${{ matrix.target }}
         env:
           GH_TOKEN: ${{ github.token }}

@@ -25,6 +25,18 @@ jobs:
           Get-AppxPackage Microsoft.WindowsTerminal | Select-Object Name,Version,InstallLocation | Format-List
           Get-WindowsCapability -Online | Where-Object { $_.Name -match 'Language.Basic~~~zh-CN' } | Select-Object Name,State | Format-List
           Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Keyboard Layouts' | Where-Object { $_.PSChildName -match '^00000804$|^E00.0804$' } | Get-ItemProperty | Select-Object PSChildName,'Layout Text','Ime File' | Format-Table
+      - name: Install Microsoft Pinyin on disposable runner
+        shell: pwsh
+        timeout-minutes: 8
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Install-Language zh-CN
+          $languages = Get-WinUserLanguageList
+          $languages.Add('zh-CN')
+          Set-WinUserLanguageList $languages -Force
+          Get-WinUserLanguageList | Format-List LanguageTag,InputMethodTips
+          Get-WindowsCapability -Online | Where-Object { $_.Name -match 'Language.Basic~~~zh-CN' } | Format-List Name,State
       - name: Download released Windows artifact
         shell: pwsh
         env:

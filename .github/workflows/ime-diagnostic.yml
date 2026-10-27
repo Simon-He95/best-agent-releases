@@ -20,6 +20,11 @@ jobs:
           Write-Output "INTERACTIVE=$([Environment]::UserInteractive)"
           Get-WinUserLanguageList | Format-List LanguageTag,InputMethodTips
           Get-Command wt.exe -ErrorAction SilentlyContinue | Format-List Source
+          Write-Output "PROCESS_SESSION=$([Diagnostics.Process]::GetCurrentProcess().SessionId)"
+          Get-Process explorer,WindowsTerminal -ErrorAction SilentlyContinue | Select-Object Name,SessionId,MainWindowHandle | Format-Table
+          Get-AppxPackage Microsoft.WindowsTerminal | Select-Object Name,Version,InstallLocation | Format-List
+          Get-WindowsCapability -Online | Where-Object { $_.Name -match 'Language.Basic~~~zh-CN' } | Select-Object Name,State | Format-List
+          Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Keyboard Layouts' | Where-Object { $_.PSChildName -match '^00000804$|^E00.0804$' } | Get-ItemProperty | Select-Object PSChildName,'Layout Text','Ime File' | Format-Table
       - name: Download released Windows artifact
         shell: pwsh
         env:

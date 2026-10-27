@@ -1,0 +1,37 @@
+name: Diagnose Windows IME input
+on:
+  push:
+    branches: [codex/diagnose-windows-ime]
+permissions:
+  contents: read
+jobs:
+  input:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.15.0'
+      - name: Inspect desktop and input environment
+        shell: pwsh
+        run: |
+          Write-Output "SESSIONNAME=$env:SESSIONNAME"
+          Write-Output "INTERACTIVE=$([Environment]::UserInteractive)"
+          Get-WinUserLanguageList | Format-List LanguageTag,InputMethodTips
+          Get-Command wt.exe -ErrorAction SilentlyContinue | Format-List Source
+      - name: Download released Windows artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download cli-v0.0.18-beta.1-8dffd14c8808 --repo Simon-He95/best-agent-releases --pattern 'best-agent-0.0.18-beta.1-win32-x64.zip' --pattern 'SHA256SUMS'
+          $entry = (Get-Content SHA256SUMS | Where-Object { $_ -match 'best-agent-0\.0\.18-beta\.1-win32-x64\.zip$' })
+          $expected = ($entry -split '\s+')[0]
+          $actual = (Get-FileHash 'best-agent-0.0.18-beta.1-win32-x64.zip' -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw 'Release checksum mismatch' }
+          Expand-Archive best-agent-0.0.18-beta.1-win32-x64.zip -DestinationPath release
+      - name: Install test driver
+        run: npm install --no-save --no-package-lock node-pty@1.1.0 @xterm/headless@5.5.0
+      - name: Probe committed text through real ConPTY
+        run: node diagnostics/ime-conpty.cjs

@@ -31,7 +31,7 @@ jobs:
         continue-on-error: true
         run: |
           $ErrorActionPreference = 'Stop'
-          Install-Language zh-CN
+          Write-Output ('PINYIN_DIRECTORY=' + (Test-Path (Join-Path $env:WINDIR 'System32\InputMethod\CHS')))
           $languages = Get-WinUserLanguageList
           $languages.Add('zh-CN')
           Set-WinUserLanguageList $languages -Force

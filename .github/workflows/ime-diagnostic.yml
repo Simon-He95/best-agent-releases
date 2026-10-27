@@ -48,6 +48,17 @@ jobs:
           $actual = (Get-FileHash 'best-agent-0.0.18-beta.1-win32-x64.zip' -Algorithm SHA256).Hash
           if ($actual -ne $expected) { throw 'Release checksum mismatch' }
           Expand-Archive best-agent-0.0.18-beta.1-win32-x64.zip -DestinationPath release
+      - name: Exercise Windows Terminal window
+        shell: pwsh
+        continue-on-error: true
+        run: ./diagnostics/ime-window.ps1
+      - name: Upload window observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ime-window-observations
+          path: ime-*.png
+          if-no-files-found: warn
       - name: Install test driver
         run: npm install --no-save --no-package-lock node-pty@1.1.0 @xterm/headless@5.5.0
       - name: Probe committed text through real ConPTY

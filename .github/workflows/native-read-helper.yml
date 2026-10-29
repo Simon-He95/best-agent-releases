@@ -97,7 +97,8 @@ jobs:
       - run: node source/scripts/public-distribution/build.mjs build ${{ matrix.target }}
         env:
           GH_TOKEN: ${{ github.token }}
-          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}      - name: Preserve encrypted diagnostics after failure
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+      - name: Preserve encrypted diagnostics after failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:

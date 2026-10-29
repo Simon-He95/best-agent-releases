@@ -97,7 +97,15 @@ jobs:
       - run: node source/scripts/public-distribution/build.mjs build ${{ matrix.target }}
         env:
           GH_TOKEN: ${{ github.token }}
-          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}      - name: Preserve encrypted diagnostics after failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-diagnostics-${{ matrix.target }}
+          path: output/${{ matrix.target }}.log.enc
+          retention-days: 1
+          if-no-files-found: ignore
+
   distribute:
     needs: [prepare, build]
     runs-on: ubuntu-24.04

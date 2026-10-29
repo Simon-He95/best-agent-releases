@@ -228,6 +228,17 @@ async function main() {
         "vitest",
         "run",
         "apps/cli/test/tui-cpu-pressure.test.ts",
+        "apps/cli/test/tui-cpu-drain.test.ts",
+        "apps/cli/test/tui-cpu-startup-seats.test.ts",
+        "apps/cli/test/tui-cpu-feedback.test.ts",
+        "apps/cli/test/tui-cpu-seat-directory.test.ts",
+        "apps/cli/src/worktree-application-service.test.ts",
+        "apps/cli/test/v3-tui-worktree.test.ts",
+        "apps/cli/src/dimsdk/core/home-shell-mode.integration.test.ts",
+        "apps/cli/src/dimsdk/core/worktree-settings.test.ts",
+        "apps/cli/src/dimsdk/pages/HomePage/logic/prompt-layout.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
         "--reporter=dot",
       ]);
       run("pnpm", [
@@ -269,6 +280,8 @@ async function main() {
       let resourcePairs;
       let nativeLargeReads;
       let largeReadResources;
+      let readRegressionResources;
+      let readCopyResources;
       if (platform.platform !== "win32") {
         process.env.RUST_READ_HELPER = path.join(source, "apps/cli/dist/workspace-read-helper");
         try {
@@ -342,6 +355,108 @@ async function main() {
           )
             throw new Error(`Large-read reports differ for ${workload}.`);
         }
+        // Build the exact current source with only the read-range writer restored
+        // to its prior form, so runner measurements isolate the proposed change.
+        const baselineDir = path.join(source, ".tmp/read-regression-baseline");
+        const helperDir = path.join(source, "packages/sandbox-host/native/read-helper");
+        mkdirSync(path.join(baselineDir, "src"), { recursive: true });
+        for (const file of ["Cargo.toml", "Cargo.lock"])
+          copyFileSync(path.join(helperDir, file), path.join(baselineDir, file));
+        const helperSource = readFileSync(path.join(helperDir, "src/main.rs"), "utf8");
+        const candidateWriter = `        if args[2] == "read-range" && report.get("residentError").is_none() {
+            let mut output = io::BufWriter::new(io::stdout().lock());
+            serde_json::to_writer(&mut output, &report).unwrap();
+            output.flush().unwrap();
+        } else {
+            serde_json::to_writer(io::stdout().lock(), &report).unwrap();
+        }`;
+        if (helperSource.split(candidateWriter).length !== 2)
+          throw new Error("Cannot isolate the prior read-range writer.");
+        writeFileSync(
+          path.join(baselineDir, "src/main.rs"),
+          helperSource.replace(
+            candidateWriter,
+            "        serde_json::to_writer(io::stdout().lock(), &report).unwrap();",
+          ),
+        );
+        run("cargo", [
+          "build",
+          "--release",
+          "--locked",
+          "--manifest-path",
+          path.join(baselineDir, "Cargo.toml"),
+        ]);
+        const regressionMeasurements = path.join(dir, "read-regressions.jsonl");
+        process.env.BENCH_BASELINE_HELPER = path.join(
+          baselineDir,
+          "target/release/best-agent-workspace-read-helper",
+        );
+        process.env.BENCH_ARMS = "rust-baseline,rust";
+        process.env.BENCH_WORKLOADS = "full-small,full-unicode,full-escaped,bytes-binaryLimit";
+        try {
+          run("python3", [
+            "-c",
+            "import subprocess,sys; f=open(sys.argv[1],'w'); subprocess.run(['python3',sys.argv[2],'3','40'],stdout=f,check=True)",
+            regressionMeasurements,
+            platform.platform === "darwin"
+              ? "scripts/experiments/rust-boundaries/resources.py"
+              : "scripts/experiments/rust-boundaries/linux-resources.py",
+          ]);
+        } finally {
+          delete process.env.BENCH_BASELINE_HELPER;
+          delete process.env.BENCH_ARMS;
+          delete process.env.BENCH_WORKLOADS;
+        }
+        readRegressionResources = readFileSync(regressionMeasurements, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line))
+          .filter((row) => row.arm);
+        if (readRegressionResources.length !== 24)
+          throw new Error("Incomplete current-vs-candidate resource campaign.");
+        for (const workload of new Set(readRegressionResources.map((row) => row.workload))) {
+          if (
+            new Set(
+              readRegressionResources
+                .filter((row) => row.workload === workload)
+                .map((row) => row.first.resultHash),
+            ).size !== 1
+          )
+            throw new Error(`Current-vs-candidate reports differ for ${workload}.`);
+        }
+        const copyMeasurements = path.join(dir, "read-copy-resources.jsonl");
+        process.env.BENCH_ARMS = "copy-baseline,rust";
+        process.env.BENCH_WORKLOADS = "bytes-small,bytes-binary,bytes-binaryLimit";
+        try {
+          run("python3", [
+            "-c",
+            "import subprocess,sys; f=open(sys.argv[1],'w'); subprocess.run(['python3',sys.argv[2],'3','40'],stdout=f,check=True)",
+            copyMeasurements,
+            platform.platform === "darwin"
+              ? "scripts/experiments/rust-boundaries/resources.py"
+              : "scripts/experiments/rust-boundaries/linux-resources.py",
+          ]);
+        } finally {
+          delete process.env.BENCH_ARMS;
+          delete process.env.BENCH_WORKLOADS;
+        }
+        readCopyResources = readFileSync(copyMeasurements, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line))
+          .filter((row) => row.arm);
+        if (readCopyResources.length !== 18)
+          throw new Error("Incomplete byte-copy resource campaign.");
+        for (const workload of new Set(readCopyResources.map((row) => row.workload))) {
+          if (
+            new Set(
+              readCopyResources
+                .filter((row) => row.workload === workload)
+                .map((row) => row.first.resultHash),
+            ).size !== 1
+          )
+            throw new Error(`Byte-copy reports differ for ${workload}.`);
+        }
         nativeReadHelper = JSON.parse(readFileSync(capture, "utf8")).verification;
         if (nativeReadHelper?.status !== "passed")
           throw new Error("Installed native helper verification receipt is missing.");
@@ -389,6 +504,8 @@ async function main() {
         textEstimator,
         ...(nativeLargeReads === undefined ? {} : { nativeLargeReads, largeReadResources }),
         ...(resourcePairs === undefined ? {} : { resourcePairs }),
+        ...(readRegressionResources === undefined ? {} : { readRegressionResources }),
+        ...(readCopyResources === undefined ? {} : { readCopyResources }),
       };
       const sealed = path.join(output, `${target}.metadata.enc`);
       writeFileSync(sealed, seal(Buffer.from(JSON.stringify(metadata)), key()));
@@ -488,7 +605,9 @@ async function main() {
             metadata.nativeLargeReads.installed.nativeObservedAtRequests?.join(",") !== "2,3" ||
             metadata.nativeLargeReads.bridge?.status !== "passed" ||
             metadata.nativeLargeReads.bridge.reopenedRawStoreExact !== true ||
-            metadata.largeReadResources?.length !== 24)
+            metadata.largeReadResources?.length !== 24 ||
+            metadata.readRegressionResources?.length !== 24 ||
+            metadata.readCopyResources?.length !== 18)
         )
           throw new Error(`Missing large-read boundary evidence for ${platform.id}.`);
         writeFileSync(path.join(dir, "build-report.json"), metadata.report);
@@ -508,6 +627,8 @@ async function main() {
             ? {}
             : {
                 nativeLargeReads: metadata.nativeLargeReads,
+                readRegressionResources: metadata.readRegressionResources,
+                readCopyResources: metadata.readCopyResources,
                 largeReadResources: metadata.largeReadResources.map((row) => ({
                   workload: row.workload,
                   arm: row.arm,

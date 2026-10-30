@@ -237,19 +237,12 @@ async function main() {
         "apps/cli/src/dimsdk/core/home-shell-mode.integration.test.ts",
         "apps/cli/src/dimsdk/core/worktree-settings.test.ts",
         "apps/cli/src/dimsdk/pages/HomePage/logic/prompt-layout.test.ts",
-        "--maxWorkers=2",
-        "--minWorkers=1",
-        "--reporter=dot",
-      ]);
-      run("pnpm", [
-        "exec",
-        "vitest",
-        "run",
         "packages/model-binding-ai-sdk/tests/input-window.test.ts",
         "packages/model-binding-ai-sdk/tests/tool-text-budget.test.ts",
         "packages/model-binding-ai-sdk/tests/tool-call-wire-boundaries.test.ts",
         "--maxWorkers=1",
         "--minWorkers=1",
+        "--reporter=dot",
       ]);
       run("node", ["scripts/experiments/rust-boundaries/bench.mjs", "prepare-node"]);
       const textSemanticsFile = path.join(source, ".tmp/rust-boundaries/text-semantics.json");

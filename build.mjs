@@ -223,6 +223,7 @@ async function main() {
       run("pnpm", ["pack:tui"]);
       if (/^Error: AttachConsole failed\r?$/m.test(readFileSync(log, "utf8")))
         throw new Error("ConPTY cleanup emitted an exception; diagnostics are encrypted.");
+      appendFileSync(log, "\nNative platform regression cohort\n");
       run("pnpm", [
         "exec",
         "vitest",
@@ -242,7 +243,31 @@ async function main() {
         "packages/model-binding-ai-sdk/tests/tool-call-wire-boundaries.test.ts",
         "--maxWorkers=1",
         "--minWorkers=1",
-        "--reporter=dot",
+        "--reporter=verbose",
+      ]);
+      appendFileSync(log, "\nNative MCP regression cohort\n");
+      run("pnpm", [
+        "exec",
+        "vitest",
+        "run",
+        "apps/cli/src/dimsdk/mcp/transport.integration.test.ts",
+        "apps/cli/src/dimsdk/mcp/index.test.ts",
+        "packages/mcp-application/tests",
+        "packages/mcp-bindings/tests",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--reporter=verbose",
+      ]);
+      appendFileSync(log, "\nNative lease/ledger regression cohort\n");
+      run("pnpm", [
+        "exec",
+        "vitest",
+        "run",
+        "packages/v3-thread-store/tests/thread-write-epoch.test.ts",
+        "apps/cli/test/v3-workflow-graph-ledger.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--reporter=verbose",
       ]);
       run("node", ["scripts/experiments/rust-boundaries/bench.mjs", "prepare-node"]);
       const textSemanticsFile = path.join(source, ".tmp/rust-boundaries/text-semantics.json");

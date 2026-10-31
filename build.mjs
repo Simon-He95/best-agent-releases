@@ -56,11 +56,17 @@ function run(command, args, cwd = source, privateOutput = true) {
   const result = spawnSync(command, args, {
     cwd,
     env: command === "gh" ? process.env : env,
-    shell: process.platform === "win32" && command !== "gh",
+    shell: process.platform === "win32" && command !== "gh" && command !== process.execPath,
     stdio: privateOutput ? ["ignore", fd, fd] : ["ignore", "pipe", "pipe"],
     encoding: "utf8",
   });
   if (fd !== undefined) closeSync(fd);
+  if (command === process.execPath) {
+    appendFileSync(
+      log,
+      `${JSON.stringify({ command, nodeVersion: process.version, pid: result.pid, status: result.status, signal: result.signal, spawnError: result.error?.message })}\n`,
+    );
+  }
   if (result.error || result.status !== 0) {
     if (result.error) appendFileSync(log, `${result.error.stack}\n`);
     if (!privateOutput) appendFileSync(log, `${result.stdout || ""}${result.stderr || ""}`);
@@ -246,14 +252,24 @@ async function main() {
         "--reporter=verbose",
       ]);
       appendFileSync(log, "\nNative MCP regression cohort\n");
-      run("pnpm", [
-        "exec",
-        "vitest",
+      appendFileSync(
+        log,
+        `${JSON.stringify({ vitestVersion: JSON.parse(readFileSync(path.join(source, "node_modules/vitest/package.json"), "utf8")).version })}\n`,
+      );
+      run(process.execPath, [
+        "--report-on-fatalerror",
+        "--report-uncaught-exception",
+        "--report-exclude-env",
+        "--report-filename=stderr",
+        path.join(source, "node_modules/vitest/vitest.mjs"),
         "run",
         "apps/cli/src/dimsdk/mcp/transport.integration.test.ts",
         "apps/cli/src/dimsdk/mcp/index.test.ts",
         "packages/mcp-application/tests",
         "packages/mcp-bindings/tests",
+        "--pool=threads",
+        "--poolOptions.threads.execArgv=--report-exclude-env",
+        "--poolOptions.threads.execArgv=--report-uncaught-exception",
         "--maxWorkers=1",
         "--minWorkers=1",
         "--reporter=verbose",

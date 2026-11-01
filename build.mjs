@@ -229,6 +229,37 @@ async function main() {
       run("pnpm", ["pack:tui"]);
       if (/^Error: AttachConsole failed\r?$/m.test(readFileSync(log, "utf8")))
         throw new Error("ConPTY cleanup emitted an exception; diagnostics are encrypted.");
+      appendFileSync(log, "\nNative headless extension acceptance\n");
+      run("pnpm", [
+        "exec",
+        "vitest",
+        "run",
+        "apps/cli/test/extension-artifacts.test.ts",
+        "apps/cli/test/extension-work.test.ts",
+        "apps/cli/test/extension-service-submit.test.ts",
+        "apps/cli/test/headless-extensions.test.ts",
+        "packages/v3-thread-store/tests/extension-source.test.ts",
+        "--maxWorkers=1",
+        "--reporter=verbose",
+      ]);
+      process.env.BEST_AGENT_EXTENSION_BINARY = path.join(
+        source,
+        ".tmp/sea",
+        target,
+        platform.binary,
+      );
+      try {
+        run("pnpm", [
+          "exec",
+          "vitest",
+          "run",
+          "apps/cli/test/headless-extensions.test.ts",
+          "--maxWorkers=1",
+          "--reporter=verbose",
+        ]);
+      } finally {
+        delete process.env.BEST_AGENT_EXTENSION_BINARY;
+      }
       appendFileSync(log, "\nNative platform regression cohort\n");
       run("pnpm", [
         "exec",
@@ -541,6 +572,17 @@ async function main() {
         ...(readRegressionResources === undefined ? {} : { readRegressionResources }),
         ...(readCopyResources === undefined ? {} : { readCopyResources }),
       };
+      const laneInstalled = path.join(source, ".tmp/native-lanes-installed");
+      mkdirSync(laneInstalled, { recursive: true });
+      run("tar", ["-xf", archive, "-C", laneInstalled]);
+      const laneCapture = path.join(dir, "exec-process-lanes.json");
+      run(process.execPath, [
+        "test/native-exec-process-lanes.mjs",
+        "--executable",
+        path.join(laneInstalled, `best-agent-${request.version}-${target}`, "bin", platform.binary),
+        laneCapture,
+      ]);
+      metadata.execProcessLanes = JSON.parse(readFileSync(laneCapture, "utf8"));
       const sealed = path.join(output, `${target}.metadata.enc`);
       writeFileSync(sealed, seal(Buffer.from(JSON.stringify(metadata)), key()));
       upload(request, [archive, `${archive}.sha256`, sealed]);
@@ -581,6 +623,15 @@ async function main() {
           metadata.archive.sha256 !== digest(path.join(downloads, name))
         )
           throw new Error(`Artifact binding failed for ${platform.id}.`);
+        if (
+          metadata.execProcessLanes?.status !== "passed" ||
+          metadata.execProcessLanes.execCeilingMs !== 120_000 ||
+          metadata.execProcessLanes.processDurationMs <= 120_000 ||
+          metadata.execProcessLanes.processStarts !== 1 ||
+          metadata.execProcessLanes.runningReads < 1
+        ) {
+          throw new Error(`Missing native exec/process lane evidence for ${platform.id}.`);
+        }
         const size = metadata.standaloneSize;
         if (
           size?.target !== platform.id ||
@@ -795,6 +846,11 @@ async function main() {
     throw error;
   } finally {
     if (mode === "build") {
+      const laneRaw = path.join(source, ".tmp/sea", target, "exec-process-lanes.json.raw.json");
+      if (existsSync(laneRaw)) {
+        appendFileSync(log, "\nNative exec/process request and source evidence\n");
+        appendFileSync(log, readFileSync(laneRaw));
+      }
       const smokes = path.join(source, ".tmp/sea", target, "standalone-smoke");
       if (existsSync(smokes)) {
         const directories = [

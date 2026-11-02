@@ -1,0 +1,54 @@
+name: Build iBench Linux candidate
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact private source commit
+        required: true
+        type: string
+      version:
+        description: Matching CLI version, no npm publication
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: ibench-linux-candidate
+  cancel-in-progress: false
+jobs:
+  linux:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Select isolated pinned candidate
+        env:
+          REQUEST_SHA: ${{ inputs.source_sha }}
+          REQUEST_VERSION: ${{ inputs.version }}
+        run: node -e 'require("fs").writeFileSync("build-request.json",JSON.stringify({sourceRepository:"Simon-He95/best-agent",sourceSha:process.env.REQUEST_SHA,version:process.env.REQUEST_VERSION})+"\n")'
+      - id: request
+        run: node build.mjs request
+      - run: node build.mjs prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: Simon-He95/best-agent
+          ref: ${{ steps.request.outputs.sha }}
+          ssh-key: ${{ secrets.SOURCE_SSH_KEY }}
+          persist-credentials: false
+          path: source
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: source/.nvmrc
+      - uses: dtolnay/rust-toolchain@1.84.0
+      - name: Build only the Linux candidate using private encrypted diagnostics
+        run: node source/scripts/public-distribution/build.mjs build linux-x64-gnu
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}

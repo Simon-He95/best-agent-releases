@@ -10,6 +10,15 @@ on:
         description: Matching CLI version (no npm publication)
         required: true
         type: string
+      measure_tui_cost:
+        description: Run the fixed private paired TUI experiment on macOS ARM64
+        required: false
+        default: false
+        type: boolean
+      evidence_recipient_key:
+        description: RSA public key for private experiment evidence
+        required: false
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -94,6 +103,32 @@ jobs:
           arch: ${{ matrix.target == 'win32-arm64' && 'amd64_arm64' || 'x64' }}
       - uses: dtolnay/rust-toolchain@1.84.0
         if: runner.os != 'Windows'
+      - name: Compare isolated TUI cost on a dedicated runner
+        if: inputs.measure_tui_cost && matrix.target == 'darwin-arm64'
+        shell: bash
+        env:
+          REQUEST_SHA: ${{ inputs.source_sha }}
+          RECIPIENT_KEY: ${{ inputs.evidence_recipient_key }}
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const { spawnSync } = require('node:child_process');
+          fs.mkdirSync('source/.tmp/tui-cost', { recursive: true });
+          const result = spawnSync(process.execPath, ['source/scripts/experiments/tui-process-isolation/ci-compare.mjs'], { encoding: 'utf8', maxBuffer: 1048576 });
+          fs.writeFileSync('source/.tmp/tui-cost/bootstrap.log', String(result.stdout || '') + String(result.stderr || ''));
+          console.log('Private paired experiment exit:', result.status);
+          process.exit(result.status === 0 ? 0 : 1);
+          JS
+      - name: Preserve sanitized measurements and encrypted raw evidence
+        if: always() && inputs.measure_tui_cost && matrix.target == 'darwin-arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tui-cost-evidence
+          path: |
+            source/.tmp/tui-cost/summary.json
+            source/.tmp/tui-cost/evidence.sealed.json
+          retention-days: 7
+          if-no-files-found: error
       - run: node source/scripts/public-distribution/build.mjs build ${{ matrix.target }}
         env:
           GH_TOKEN: ${{ github.token }}

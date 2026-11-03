@@ -10,6 +10,11 @@ on:
         description: Matching CLI version, no npm publication
         required: true
         type: string
+      npm_before:
+        description: Optional immutable npm registry cutoff for dependency resolution
+        required: false
+        default: ""
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -48,7 +53,12 @@ jobs:
           node-version-file: source/.nvmrc
       - uses: dtolnay/rust-toolchain@1.84.0
       - name: Build only the Linux candidate using private encrypted diagnostics
-        run: node source/scripts/public-distribution/build.mjs build linux-x64-gnu
+        run: |
+          if [ -n "$NPM_BEFORE" ]; then
+            export npm_config_before="$NPM_BEFORE"
+          fi
+          node source/scripts/public-distribution/build.mjs build linux-x64-gnu
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+          NPM_BEFORE: ${{ inputs.npm_before }}

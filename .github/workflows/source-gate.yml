@@ -6,6 +6,10 @@ on:
         description: Exact private source commit to gate
         required: true
         type: string
+      base_sha:
+        description: Exact base commit the candidate was rebased onto (the merge base)
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -45,9 +49,11 @@ jobs:
       - name: lint
         run: pnpm lint
       - name: format:check
+        env:
+          BASE_SHA: ${{ inputs.base_sha }}
         run: |
-          git fetch --no-tags origin main
-          echo "merge base: $(git merge-base origin/main HEAD)"
-          node scripts/run-oxfmt-changed.mjs --check --base origin/main
+          echo "merge base: $(git merge-base "$BASE_SHA" HEAD)"
+          git diff --stat "$BASE_SHA"..HEAD
+          node scripts/run-oxfmt-changed.mjs --check --base "$BASE_SHA"
       - name: test
         run: pnpm test

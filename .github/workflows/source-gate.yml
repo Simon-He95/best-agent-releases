@@ -1,0 +1,53 @@
+name: Source gate
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact private source commit to gate
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: source-gate-${{ inputs.source_sha }}
+  cancel-in-progress: false
+jobs:
+  gate:
+    runs-on: macos-15
+    timeout-minutes: 300
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Simon-He95/best-agent
+          ref: ${{ inputs.source_sha }}
+          ssh-key: ${{ secrets.SOURCE_SSH_KEY }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Record the exact gated commit
+        run: |
+          git rev-parse HEAD
+          git log -1 --format='%H %s'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install frozen dependencies
+        run: |
+          node -v
+          npm -v
+          corepack enable
+          corepack install
+          pnpm -v
+          pnpm install --frozen-lockfile
+      - name: typecheck
+        run: pnpm typecheck
+      - name: lint
+        run: pnpm lint
+      - name: format:check
+        run: |
+          git fetch --no-tags origin main
+          echo "merge base: $(git merge-base origin/main HEAD)"
+          node scripts/run-oxfmt-changed.mjs --check --base origin/main
+      - name: test
+        run: pnpm test

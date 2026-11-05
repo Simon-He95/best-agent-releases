@@ -17,6 +17,13 @@ Run `pnpm distribute:cli` from a clean source checkout. It pushes the source com
 
 Only trusted pushes to `main` and manual runs on `main` can build. CI uses a read-only source deploy key. Raw build output and validation metadata are encrypted with AES-256-GCM; encrypted staging assets are removed before a successful Release is published. No source checkout, source maps, raw logs or internal build reports are uploaded as public release assets. The embedded JavaScript inside a SEA is still part of the distributed program.
 
+A failed target uploads its encrypted log as `<target>.log.enc` on the draft Release before the job exits, and the job log prints that asset name. Decrypt it with the same `BUILD_ENCRYPTION_KEY` the workflow holds:
+
+```sh
+gh release download <tag> --repo Simon-He95/best-agent-releases -p <target>.log.enc -D /tmp/diagnostics
+BUILD_ENCRYPTION_KEY=<key> node build.mjs decrypt /tmp/diagnostics/<target>.log.enc /tmp/diagnostics/<target>.log
+```
+
 ## Manual npm publication
 
 `publish.yml` has only a manual trigger and defaults to `dry_run=true`. It accepts an existing Release tag, never builds application source, and needs no source deploy key or build encryption key. Before any npm write it verifies the published Release's exact assets and GitHub digests, the historical source request, a successful trusted `build.yml` run with all six native jobs and distribution successful, all six acceptance records, checksums, package identities, and the launcher's exact six platform dependencies. A draft, failed build, missing target, altered bytes, or conflicting registry version blocks publication.

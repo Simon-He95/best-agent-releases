@@ -949,6 +949,11 @@ async function main() {
       if (!published) {
         try {
           upload(request, [diagnostics]);
+          const asset = path.basename(diagnostics);
+          console.error(`Encrypted diagnostics: ${request.tag}/${asset}`);
+          console.error(
+            `Decrypt: gh release download ${request.tag} --repo ${process.env.GITHUB_REPOSITORY} -p ${asset} -D <dir>, then BUILD_ENCRYPTION_KEY=<key> node build.mjs decrypt <dir>/${asset} <dir>/diagnostics.log`,
+          );
         } catch {
           console.error("Encrypted diagnostic upload failed; inspect this runner before retrying.");
         }

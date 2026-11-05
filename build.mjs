@@ -227,8 +227,28 @@ async function main() {
         console.log(`${target}: native CPU supervisor preflight passed.`);
       }
       run("pnpm", ["pack:tui"]);
+      if (platform.id === "darwin-arm64") {
+        appendFileSync(log, "\nComplete source gate on the native macOS runner\n");
+        run("pnpm", ["typecheck"]);
+        run("pnpm", ["lint"]);
+        run("pnpm", ["format:check"]);
+        run("pnpm", ["test"]);
+      }
       if (/^Error: AttachConsole failed\r?$/m.test(readFileSync(log, "utf8")))
         throw new Error("ConPTY cleanup emitted an exception; diagnostics are encrypted.");
+      appendFileSync(log, "\nNative Code Mode standalone acceptance\n");
+      process.env.BEST_AGENT_CODE_MODE_BINARY = path.join(
+        source,
+        ".tmp/sea",
+        target,
+        platform.binary,
+      );
+      try {
+        run("node", ["test/native-code-mode.mjs", "success"]);
+        run("node", ["test/native-code-mode.mjs", "failure"]);
+      } finally {
+        delete process.env.BEST_AGENT_CODE_MODE_BINARY;
+      }
       appendFileSync(log, "\nNative headless extension acceptance\n");
       run("pnpm", [
         "exec",
@@ -265,6 +285,19 @@ async function main() {
         "exec",
         "vitest",
         "run",
+        "apps/cli/src/tui-process",
+        "apps/cli/test/v3-tui-process-isolation.test.ts",
+        "apps/cli/src/product-slices/tui-turn-application.test.ts",
+        "apps/cli/src/dimsdk/core/store/native-stream-runner.test.ts",
+        "apps/cli/src/dimsdk/core/store/send-loop.test.ts",
+        "apps/cli/src/dimsdk/core/store/attach-active-turn.test.ts",
+        "apps/cli/src/dimsdk/core/store/interrupted-terminal-follower.test.ts",
+        "packages/render-core/src/ui/theme/resolution.test.ts",
+        "apps/cli/src/dimsdk/pages/ChatPage/components/chat-bottom-panel-shell.test.ts",
+        "packages/render-core/src/ui/theme/color-contrast.test.ts",
+        "packages/render-core/src/ui/chat/row-identity.test.ts",
+        "packages/render-core/src/ui/chat/layout-model.test.ts",
+        "apps/cli/test/v3-tui-transcript-layout-performance.test.ts",
         "apps/cli/test/tui-cpu-pressure.test.ts",
         "apps/cli/test/tui-cpu-drain.test.ts",
         "apps/cli/test/tui-cpu-startup-seats.test.ts",
@@ -316,6 +349,14 @@ async function main() {
         "--minWorkers=1",
         "--reporter=verbose",
       ]);
+      appendFileSync(log, "\nPaired TUI layout computation\n");
+      run(process.execPath, ["scripts/experiments/tui-rust-ts/bench.mjs", "prepare-node"]);
+      run(process.execPath, ["scripts/experiments/tui-rust-ts/bench.mjs", "verify-node"]);
+      run(process.execPath, ["scripts/experiments/tui-rust-ts/bench.mjs", "campaign-node", "3"]);
+      const tuiLayout = JSON.parse(
+        readFileSync(path.join(source, ".tmp/tui-rust-ts/campaign-node.json"), "utf8"),
+      );
+      appendFileSync(log, `TUI_LAYOUT_RECEIPT ${JSON.stringify({ target, ...tuiLayout })}\n`);
       run("node", ["scripts/experiments/rust-boundaries/bench.mjs", "prepare-node"]);
       const textSemanticsFile = path.join(source, ".tmp/rust-boundaries/text-semantics.json");
       const textResourcesFile = path.join(source, ".tmp/rust-boundaries/text-resources.json");
@@ -567,6 +608,7 @@ async function main() {
         standaloneSize: JSON.parse(readFileSync(path.join(dir, "standalone-size.json"), "utf8")),
         ...(nativeReadHelper === undefined ? {} : { nativeReadHelper }),
         textEstimator,
+        tuiLayout,
         ...(nativeLargeReads === undefined ? {} : { nativeLargeReads, largeReadResources }),
         ...(resourcePairs === undefined ? {} : { resourcePairs }),
         ...(readRegressionResources === undefined ? {} : { readRegressionResources }),
@@ -683,6 +725,23 @@ async function main() {
         )
           throw new Error(`Missing text-estimator boundary evidence for ${platform.id}.`);
         if (
+          metadata.tuiLayout?.results?.length !== 18 ||
+          metadata.tuiLayout.environment.currentDigestSha256 !==
+            digest(path.join(source, "packages/render-core/src/ui/chat/row-identity.ts")) ||
+          metadata.tuiLayout.environment.currentLayoutSha256 !==
+            digest(path.join(source, "packages/render-core/src/ui/chat/layout-model.ts"))
+        )
+          throw new Error(`Missing exact-source TUI layout evidence for ${platform.id}.`);
+        for (const workload of ["ascii", "unicode", "wrapped"]) {
+          const rows = metadata.tuiLayout.results.filter((row) => row.workload === workload);
+          if (
+            rows.length !== 6 ||
+            new Set(rows.map((row) => `${row.arm}:${row.round}`)).size !== 6 ||
+            new Set(rows.map((row) => row.outputSha256)).size !== 1
+          )
+            throw new Error(`TUI layout output mismatch for ${platform.id}/${workload}.`);
+        }
+        if (
           mode === "verify" &&
           platform.platform !== "win32" &&
           (metadata.nativeLargeReads?.installed?.status !== "passed" ||
@@ -695,6 +754,10 @@ async function main() {
             metadata.readCopyResources?.length !== 18)
         )
           throw new Error(`Missing large-read boundary evidence for ${platform.id}.`);
+        appendFileSync(
+          log,
+          `TUI_LAYOUT_RECEIPT ${JSON.stringify({ ...metadata.tuiLayout, target: platform.id })}\n`,
+        );
         writeFileSync(path.join(dir, "build-report.json"), metadata.report);
         writeFileSync(path.join(dir, "acceptance-evidence.json"), metadata.evidence);
         standaloneAssets.push(name, `${name}.sha256`);
@@ -708,6 +771,7 @@ async function main() {
           interactiveTui: true,
           cpuSupervisor: true,
           textEstimator: metadata.textEstimator,
+          tuiLayout: { pairedCases: metadata.tuiLayout.results.length, exactRows: true },
           ...(metadata.nativeLargeReads === undefined
             ? {}
             : {

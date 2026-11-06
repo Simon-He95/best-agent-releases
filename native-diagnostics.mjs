@@ -18,7 +18,7 @@ if (
   !assets.length ||
   assets.some(
     (asset) =>
-      !/^(darwin-arm64|darwin-x64|linux-arm64-gnu|linux-x64-gnu|win32-arm64|win32-x64|assemble)\.log\.enc$/.test(
+      !/^(darwin-arm64|darwin-x64|linux-arm64-gnu|linux-x64-gnu|win32-arm64|win32-x64|assemble|source-gate)\.log\.enc$/.test(
         asset,
       ),
   )

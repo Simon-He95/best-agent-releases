@@ -70,8 +70,10 @@ function run(command, args, cwd = source, privateOutput = true) {
   if (result.error || result.status !== 0) {
     if (result.error) appendFileSync(log, `${result.error.stack}\n`);
     if (!privateOutput) appendFileSync(log, `${result.stdout || ""}${result.stderr || ""}`);
+    // Name the package-manager subcommand; its arguments stay in the encrypted log.
+    const step = command === "pnpm" || command === "corepack" ? ` ${args[0] ?? ""}` : "";
     throw new Error(
-      `${command} failed (exit ${result.status ?? "spawn"}); diagnostics are encrypted.`,
+      `${command}${step} failed (exit ${result.status ?? "spawn"}); diagnostics are encrypted.`,
     );
   }
   return result.stdout;

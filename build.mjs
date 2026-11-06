@@ -249,10 +249,13 @@ async function main() {
     install();
     if (mode === "gate") {
       // The source gate has a runner of its own so the six-platform build does not wait for it.
-      // `pnpm test:gate` runs the same selection as `pnpm test` with the CLI suite sharded.
+      // It runs the same serial gate the merge requires: sharding this suite on the three-core
+      // macOS runner starved its timing tests, so the job stays within the two-worker budget.
       appendFileSync(log, "\nComplete source gate on the native macOS runner\n");
-      run("pnpm", ["build"]);
-      run("node", ["scripts/run-test-gate.mjs", "--skip-build", "--shards=3", "--workers=1"]);
+      run("pnpm", ["typecheck"]);
+      run("pnpm", ["lint"]);
+      run("pnpm", ["format:check"]);
+      run("pnpm", ["test"]);
       return;
     }
     const { cliSeaTargets } = await import(

@@ -83,6 +83,55 @@ function gh(args) {
   return run("gh", args, root, false);
 }
 
+/** Adds the acceptance step's public name to a failure without exposing its private output. */
+function step(label, action) {
+  try {
+    return action();
+  } catch (error) {
+    throw new Error(`${label}: ${error.message}`);
+  }
+}
+
+/** Runs a fixed cohort and names the failing entry by its position, never by its private path. */
+const ANSI_ESCAPE = new RegExp(String.raw`\u001b\[[0-9;]*m`, "gu");
+function cohort(label, files, args = []) {
+  const start = existsSync(log) ? statSync(log).size : 0;
+  try {
+    run("pnpm", ["exec", "vitest", "run", ...files, ...args]);
+  } catch (error) {
+    const added = existsSync(log)
+      ? readFileSync(log).subarray(start).toString("utf8").replace(ANSI_ESCAPE, "")
+      : "";
+    const failed = files
+      .map((file, index) =>
+        new RegExp(`FAIL\\s+${escapeRegExp(file)}`, "u").test(added) ? index : -1,
+      )
+      .filter((index) => index !== -1);
+    const detail = failed.length === 0 ? "unknown item" : `item ${failed.join(", ")}`;
+    throw new Error(`${label} failed (${detail}); ${error.message}`);
+  }
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, (character) => `\\${character}`);
+}
+
+/** The last acceptance section written to the private log, which is a public phase name. */
+function lastSectionLabel() {
+  if (!existsSync(log)) return undefined;
+  const lines = readFileSync(log, "utf8").trimEnd().split(/\r?\n/u);
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index].trim();
+    if (
+      /^(?:Complete source gate|Native .+ acceptance|Native .+ cohort|Paired TUI layout computation)$/u.test(
+        line,
+      )
+    )
+      return line;
+  }
+  return undefined;
+}
+
 function key() {
   const value = Buffer.from(process.env.BUILD_ENCRYPTION_KEY || "", "base64");
   if (value.length !== 32)
@@ -246,24 +295,27 @@ async function main() {
         platform.binary,
       );
       try {
-        run("node", ["test/native-code-mode.mjs", "success"]);
-        run("node", ["test/native-code-mode.mjs", "failure"]);
+        step("native Code Mode success", () =>
+          run("node", ["test/native-code-mode.mjs", "success"]),
+        );
+        step("native Code Mode failure", () =>
+          run("node", ["test/native-code-mode.mjs", "failure"]),
+        );
       } finally {
         delete process.env.BEST_AGENT_CODE_MODE_BINARY;
       }
       appendFileSync(log, "\nNative headless extension acceptance\n");
-      run("pnpm", [
-        "exec",
-        "vitest",
-        "run",
-        "apps/cli/test/extension-artifacts.test.ts",
-        "apps/cli/test/extension-work.test.ts",
-        "apps/cli/test/extension-service-submit.test.ts",
-        "apps/cli/test/headless-extensions.test.ts",
-        "packages/v3-thread-store/tests/extension-source.test.ts",
-        "--maxWorkers=1",
-        "--reporter=verbose",
-      ]);
+      cohort(
+        "native extension cohort",
+        [
+          "apps/cli/test/extension-artifacts.test.ts",
+          "apps/cli/test/extension-work.test.ts",
+          "apps/cli/test/extension-service-submit.test.ts",
+          "apps/cli/test/headless-extensions.test.ts",
+          "packages/v3-thread-store/tests/extension-source.test.ts",
+        ],
+        ["--maxWorkers=1", "--reporter=verbose"],
+      );
       process.env.BEST_AGENT_EXTENSION_BINARY = path.join(
         source,
         ".tmp/sea",
@@ -271,52 +323,47 @@ async function main() {
         platform.binary,
       );
       try {
-        run("pnpm", [
-          "exec",
-          "vitest",
-          "run",
-          "apps/cli/test/headless-extensions.test.ts",
-          "--maxWorkers=1",
-          "--reporter=verbose",
-        ]);
+        cohort(
+          "native extension binary cohort",
+          ["apps/cli/test/headless-extensions.test.ts"],
+          ["--maxWorkers=1", "--reporter=verbose"],
+        );
       } finally {
         delete process.env.BEST_AGENT_EXTENSION_BINARY;
       }
       appendFileSync(log, "\nNative platform regression cohort\n");
-      run("pnpm", [
-        "exec",
-        "vitest",
-        "run",
-        "apps/cli/src/tui-process",
-        "apps/cli/test/v3-tui-process-isolation.test.ts",
-        "apps/cli/src/product-slices/tui-turn-application.test.ts",
-        "apps/cli/src/dimsdk/core/store/native-stream-runner.test.ts",
-        "apps/cli/src/dimsdk/core/store/send-loop.test.ts",
-        "apps/cli/src/dimsdk/core/store/attach-active-turn.test.ts",
-        "apps/cli/src/dimsdk/core/store/interrupted-terminal-follower.test.ts",
-        "packages/render-core/src/ui/theme/resolution.test.ts",
-        "apps/cli/src/dimsdk/pages/ChatPage/components/chat-bottom-panel-shell.test.ts",
-        "packages/render-core/src/ui/theme/color-contrast.test.ts",
-        "packages/render-core/src/ui/chat/row-identity.test.ts",
-        "packages/render-core/src/ui/chat/layout-model.test.ts",
-        "apps/cli/test/v3-tui-transcript-layout-performance.test.ts",
-        "apps/cli/test/tui-cpu-pressure.test.ts",
-        "apps/cli/test/tui-cpu-drain.test.ts",
-        "apps/cli/test/tui-cpu-startup-seats.test.ts",
-        "apps/cli/test/tui-cpu-feedback.test.ts",
-        "apps/cli/test/tui-cpu-seat-directory.test.ts",
-        "apps/cli/src/worktree-application-service.test.ts",
-        "apps/cli/test/v3-tui-worktree.test.ts",
-        "apps/cli/src/dimsdk/core/home-shell-mode.integration.test.ts",
-        "apps/cli/src/dimsdk/core/worktree-settings.test.ts",
-        "apps/cli/src/dimsdk/pages/HomePage/logic/prompt-layout.test.ts",
-        "packages/model-binding-ai-sdk/tests/input-window.test.ts",
-        "packages/model-binding-ai-sdk/tests/tool-text-budget.test.ts",
-        "packages/model-binding-ai-sdk/tests/tool-call-wire-boundaries.test.ts",
-        "--maxWorkers=1",
-        "--minWorkers=1",
-        "--reporter=verbose",
-      ]);
+      cohort(
+        "native platform cohort",
+        [
+          "apps/cli/src/tui-process",
+          "apps/cli/test/v3-tui-process-isolation.test.ts",
+          "apps/cli/src/product-slices/tui-turn-application.test.ts",
+          "apps/cli/src/dimsdk/core/store/native-stream-runner.test.ts",
+          "apps/cli/src/dimsdk/core/store/send-loop.test.ts",
+          "apps/cli/src/dimsdk/core/store/attach-active-turn.test.ts",
+          "apps/cli/src/dimsdk/core/store/interrupted-terminal-follower.test.ts",
+          "packages/render-core/src/ui/theme/resolution.test.ts",
+          "apps/cli/src/dimsdk/pages/ChatPage/components/chat-bottom-panel-shell.test.ts",
+          "packages/render-core/src/ui/theme/color-contrast.test.ts",
+          "packages/render-core/src/ui/chat/row-identity.test.ts",
+          "packages/render-core/src/ui/chat/layout-model.test.ts",
+          "apps/cli/test/v3-tui-transcript-layout-performance.test.ts",
+          "apps/cli/test/tui-cpu-pressure.test.ts",
+          "apps/cli/test/tui-cpu-drain.test.ts",
+          "apps/cli/test/tui-cpu-startup-seats.test.ts",
+          "apps/cli/test/tui-cpu-feedback.test.ts",
+          "apps/cli/test/tui-cpu-seat-directory.test.ts",
+          "apps/cli/src/worktree-application-service.test.ts",
+          "apps/cli/test/v3-tui-worktree.test.ts",
+          "apps/cli/src/dimsdk/core/home-shell-mode.integration.test.ts",
+          "apps/cli/src/dimsdk/core/worktree-settings.test.ts",
+          "apps/cli/src/dimsdk/pages/HomePage/logic/prompt-layout.test.ts",
+          "packages/model-binding-ai-sdk/tests/input-window.test.ts",
+          "packages/model-binding-ai-sdk/tests/tool-text-budget.test.ts",
+          "packages/model-binding-ai-sdk/tests/tool-call-wire-boundaries.test.ts",
+        ],
+        ["--maxWorkers=1", "--minWorkers=1", "--reporter=verbose"],
+      );
       appendFileSync(log, "\nNative MCP regression cohort\n");
       appendFileSync(
         log,
@@ -341,16 +388,14 @@ async function main() {
         "--reporter=verbose",
       ]);
       appendFileSync(log, "\nNative lease/ledger regression cohort\n");
-      run("pnpm", [
-        "exec",
-        "vitest",
-        "run",
-        "packages/v3-thread-store/tests/thread-write-epoch.test.ts",
-        "apps/cli/test/v3-workflow-graph-ledger.test.ts",
-        "--maxWorkers=1",
-        "--minWorkers=1",
-        "--reporter=verbose",
-      ]);
+      cohort(
+        "native lease/ledger cohort",
+        [
+          "packages/v3-thread-store/tests/thread-write-epoch.test.ts",
+          "apps/cli/test/v3-workflow-graph-ledger.test.ts",
+        ],
+        ["--maxWorkers=1", "--minWorkers=1", "--reporter=verbose"],
+      );
       appendFileSync(log, "\nPaired TUI layout computation\n");
       run(process.execPath, ["scripts/experiments/tui-rust-ts/bench.mjs", "prepare-node"]);
       run(process.execPath, ["scripts/experiments/tui-rust-ts/bench.mjs", "verify-node"]);
@@ -393,14 +438,11 @@ async function main() {
       if (platform.platform !== "win32") {
         process.env.RUST_READ_HELPER = path.join(source, "apps/cli/dist/workspace-read-helper");
         try {
-          run("pnpm", [
-            "exec",
-            "vitest",
-            "run",
-            "packages/sandbox-host/tests/rust-read-helper.test.ts",
-            "--maxWorkers=1",
-            "--minWorkers=1",
-          ]);
+          cohort(
+            "native read-helper cohort",
+            ["packages/sandbox-host/tests/rust-read-helper.test.ts"],
+            ["--maxWorkers=1", "--minWorkers=1"],
+          );
         } finally {
           delete process.env.RUST_READ_HELPER;
         }
@@ -967,6 +1009,8 @@ async function main() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
     console.error(error.message);
+    const section = lastSectionLabel();
+    if (section) console.error(`Last acceptance section: ${section}`);
     process.exitCode = 1;
   });
 }

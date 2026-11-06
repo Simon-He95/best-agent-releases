@@ -70,6 +70,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: source/.nvmrc
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         if: runner.os == 'Windows'
         with:
@@ -80,8 +82,35 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+  source-gate:
+    needs: prepare
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Simon-He95/best-agent
+          ref: ${{ needs.prepare.outputs.sha }}
+          ssh-key: ${{ secrets.SOURCE_SSH_KEY }}
+          persist-credentials: false
+          path: source
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: source/.nvmrc
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@1.84.0
+      - run: node build.mjs gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
   distribute:
-    needs: [prepare, build]
+    needs: [prepare, build, source-gate]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -100,6 +129,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: source/.nvmrc
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
       - run: node build.mjs assemble
         env:
           GH_TOKEN: ${{ github.token }}

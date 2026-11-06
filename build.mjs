@@ -247,6 +247,14 @@ async function main() {
       return;
     }
     install();
+    if (mode === "gate") {
+      // The source gate has a runner of its own so the six-platform build does not wait for it.
+      // `pnpm test:gate` runs the same selection as `pnpm test` with the CLI suite sharded.
+      appendFileSync(log, "\nComplete source gate on the native macOS runner\n");
+      run("pnpm", ["build"]);
+      run("node", ["scripts/run-test-gate.mjs", "--skip-build", "--shards=3", "--workers=1"]);
+      return;
+    }
     const { cliSeaTargets } = await import(
       pathToFileURL(path.join(source, "scripts/cli-sea-targets.mjs"))
     );
@@ -278,13 +286,6 @@ async function main() {
         console.log(`${target}: native CPU supervisor preflight passed.`);
       }
       run("pnpm", ["pack:tui"]);
-      if (platform.id === "darwin-arm64") {
-        appendFileSync(log, "\nComplete source gate on the native macOS runner\n");
-        run("pnpm", ["typecheck"]);
-        run("pnpm", ["lint"]);
-        run("pnpm", ["format:check"]);
-        run("pnpm", ["test"]);
-      }
       if (/^Error: AttachConsole failed\r?$/m.test(readFileSync(log, "utf8")))
         throw new Error("ConPTY cleanup emitted an exception; diagnostics are encrypted.");
       appendFileSync(log, "\nNative Code Mode standalone acceptance\n");
@@ -985,7 +986,13 @@ async function main() {
     }
     const diagnostics = path.join(
       output,
-      `${mode === "build" || mode === "checkout" ? target : "assemble"}.log.enc`,
+      `${
+        mode === "build" || mode === "checkout"
+          ? target
+          : mode === "gate"
+            ? "source-gate"
+            : "assemble"
+      }.log.enc`,
     );
     if (existsSync(log)) {
       writeFileSync(diagnostics, seal(readFileSync(log), key()));

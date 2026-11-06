@@ -70,8 +70,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: source/.nvmrc
-          cache: pnpm
-          cache-dependency-path: source/pnpm-lock.yaml
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         if: runner.os == 'Windows'
         with:
@@ -102,8 +100,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: source/.nvmrc
-          cache: pnpm
-          cache-dependency-path: source/pnpm-lock.yaml
       - uses: dtolnay/rust-toolchain@1.84.0
       - run: node build.mjs gate
         env:
@@ -129,8 +125,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: source/.nvmrc
-          cache: pnpm
-          cache-dependency-path: source/pnpm-lock.yaml
       - run: node build.mjs assemble
         env:
           GH_TOKEN: ${{ github.token }}

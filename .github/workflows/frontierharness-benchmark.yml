@@ -3,6 +3,11 @@ name: FrontierHarness benchmark
 # Runs the published FrontierHarness task set through Harbor on an amd64 runner.
 # The task images are linux/amd64, so running here rather than on the developer's
 # arm64 machine is what makes wall time meaningful.
+#
+# The CLI under test is built from the source commit rather than installed from
+# npm: pack-cli-node stages a single-platform package, so the artifact has to be
+# produced on the same platform as the task containers. That also means the run
+# measures the commit under test and not the last published release.
 on:
   workflow_dispatch:
     inputs:
@@ -11,7 +16,7 @@ on:
         required: true
         type: string
       tasks:
-        description: Comma-separated task subset; empty runs all 21 Terminal-Bench tasks
+        description: Comma-separated task subset; empty runs all 62 v1.1 tasks
         required: false
         type: string
         default: ""
@@ -20,6 +25,16 @@ on:
         required: false
         type: string
         default: deepseek/deepseek-flash
+      attempts:
+        description: Attempts per task; the published board scores the first valid one
+        required: false
+        type: string
+        default: "1"
+      concurrency:
+        description: Concurrent trials
+        required: false
+        type: string
+        default: "3"
 
 permissions:
   contents: read
@@ -33,7 +48,10 @@ concurrency:
 jobs:
   benchmark:
     runs-on: ubuntu-24.04
-    timeout-minutes: 480
+    # GitHub kills a hosted job at 6 hours regardless; the 62-task set at three
+    # concurrent trials fits well inside it, and this bound makes an overrun
+    # deterministic instead of silent.
+    timeout-minutes: 360
     permissions:
       contents: read
     steps:
@@ -56,6 +74,23 @@ jobs:
         with:
           node-version-file: .nvmrc
 
+      - name: Install pnpm
+        run: |
+          npm install --global pnpm@10.34.9
+          pnpm --version
+          node --version
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the CLI under test
+        run: |
+          node scripts/pack-cli-node.mjs .tmp/bench-cli-node
+          tarball=$(ls .tmp/bench-cli-node/*.tgz)
+          echo "packed $tarball"
+          sha256sum "$tarball"
+          echo "BENCH_CLI_ARTIFACT=$(realpath "$tarball")" >> "$GITHUB_ENV"
+
       - name: Install Harbor
         run: |
           python3 -m pip install --upgrade pip
@@ -71,7 +106,10 @@ jobs:
           python3 benchmarks/frontierharness/run_benchmark.py \
             --output "runs/${{ inputs.source_sha }}" \
             --model "${{ inputs.model }}" \
-            --tasks "${{ inputs.tasks }}"
+            --tasks "${{ inputs.tasks }}" \
+            --attempts "${{ inputs.attempts }}" \
+            --concurrency "${{ inputs.concurrency }}" \
+            --cli-artifact "$BENCH_CLI_ARTIFACT"
 
       - name: Upload results
         if: always()
@@ -82,7 +120,7 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      - name: Fail when no task was scored
+      - name: Fail when the published set was not scored
         if: always()
         run: |
           summary="runs/${{ inputs.source_sha }}/summary.json"
@@ -93,7 +131,7 @@ jobs:
           python3 - "$summary" <<'PY'
           import json, sys
           summary = json.load(open(sys.argv[1]))
-          print(json.dumps({k: v for k, v in summary.items() if k != "records"}, indent=2))
+          print(json.dumps({k: v for k, v in summary.items() if k != "tasks"}, indent=2))
           if not summary["scored"]:
               raise SystemExit("no task was scored")
           PY

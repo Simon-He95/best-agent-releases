@@ -4,10 +4,11 @@ name: FrontierHarness benchmark
 # The task images are linux/amd64, so running here rather than on the developer's
 # arm64 machine is what makes wall time meaningful.
 #
-# The CLI under test is built from the source commit rather than installed from
-# npm: pack-cli-node stages a single-platform package, so the artifact has to be
-# produced on the same platform as the task containers. That also means the run
-# measures the commit under test and not the last published release.
+# The CLI under test is built from the source commit, installed into a Node runtime
+# on the runner, and bind-mounted read-only into every trial. Setup therefore needs
+# no network: task images are not required to carry a Node, and their setup phase is
+# not guaranteed egress to a package registry. This is the part a golden checkpoint
+# plays in the official flow.
 on:
   workflow_dispatch:
     inputs:
@@ -49,7 +50,7 @@ jobs:
   benchmark:
     runs-on: ubuntu-24.04
     # GitHub kills a hosted job at 6 hours regardless; the 62-task set at three
-    # concurrent trials fits well inside it, and this bound makes an overrun
+    # concurrent trials needs about four, and this bound makes an overrun
     # deterministic instead of silent.
     timeout-minutes: 360
     permissions:
@@ -69,6 +70,7 @@ jobs:
           git log -1 --format='%H %s'
           uname -m
           docker version --format '{{.Server.Version}}'
+          df -h /
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -83,13 +85,21 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build the CLI under test
+      - name: Build the CLI and prepare its runtime
         run: |
           node scripts/pack-cli-node.mjs .tmp/bench-cli-node
           tarball=$(ls .tmp/bench-cli-node/*.tgz)
           echo "packed $tarball"
           sha256sum "$tarball"
-          echo "BENCH_CLI_ARTIFACT=$(realpath "$tarball")" >> "$GITHUB_ENV"
+          runtime="$RUNNER_TEMP/ba-runtime"
+          mkdir -p "$runtime"
+          # The runner's Node, laid out the way a global install expects, so the
+          # trial mount carries both the interpreter and the CLI.
+          cp -a "$(dirname "$(dirname "$(command -v node)")")/." "$runtime/"
+          npm install --global --prefix "$runtime" --no-fund --no-audit "$tarball"
+          "$runtime/bin/best-agent" --version
+          "$runtime/bin/best-agent-workspace-read-helper" --help >/dev/null 2>&1 || true
+          echo "BENCH_CLI_RUNTIME=$runtime" >> "$GITHUB_ENV"
 
       - name: Install Harbor
         run: |
@@ -109,7 +119,7 @@ jobs:
             --tasks "${{ inputs.tasks }}" \
             --attempts "${{ inputs.attempts }}" \
             --concurrency "${{ inputs.concurrency }}" \
-            --cli-artifact "$BENCH_CLI_ARTIFACT"
+            --cli-runtime "$BENCH_CLI_RUNTIME"
 
       - name: Upload results
         if: always()

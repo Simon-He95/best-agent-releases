@@ -123,6 +123,9 @@ jobs:
 
       - name: Upload results
         if: always()
+        # The per-task table is already in this job's log, so a runner-side artifact
+        # failure must not turn a completed benchmark into a failed run.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: frontierharness-${{ inputs.source_sha }}

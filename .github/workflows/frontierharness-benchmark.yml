@@ -1,0 +1,99 @@
+name: FrontierHarness benchmark
+
+# Runs the published FrontierHarness task set through Harbor on an amd64 runner.
+# The task images are linux/amd64, so running here rather than on the developer's
+# arm64 machine is what makes wall time meaningful.
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact private source commit to benchmark
+        required: true
+        type: string
+      tasks:
+        description: Comma-separated task subset; empty runs all 21 Terminal-Bench tasks
+        required: false
+        type: string
+        default: ""
+      model:
+        description: provider/model passed to the adapter
+        required: false
+        type: string
+        default: deepseek/deepseek-flash
+
+permissions:
+  contents: read
+
+# Never cancel mid-run: a cancelled trial still holds a container, and its spend
+# is already committed.
+concurrency:
+  group: frontierharness-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 480
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Simon-He95/best-agent
+          ref: ${{ inputs.source_sha }}
+          ssh-key: ${{ secrets.SOURCE_SSH_KEY }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Record the exact benchmarked commit
+        run: |
+          git rev-parse HEAD
+          git log -1 --format='%H %s'
+          uname -m
+          docker version --format '{{.Server.Version}}'
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install Harbor
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install 'harbor==0.14.0'
+          harbor --version
+          python3 --version
+
+      - name: Run the benchmark
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python3 benchmarks/frontierharness/run_benchmark.py \
+            --output "runs/${{ inputs.source_sha }}" \
+            --model "${{ inputs.model }}" \
+            --tasks "${{ inputs.tasks }}"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontierharness-${{ inputs.source_sha }}
+          path: runs/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Fail when no task was scored
+        if: always()
+        run: |
+          summary="runs/${{ inputs.source_sha }}/summary.json"
+          if [ ! -f "$summary" ]; then
+            echo "summary.json is missing; the runner did not finish" >&2
+            exit 1
+          fi
+          python3 - "$summary" <<'PY'
+          import json, sys
+          summary = json.load(open(sys.argv[1]))
+          print(json.dumps({k: v for k, v in summary.items() if k != "records"}, indent=2))
+          if not summary["scored"]:
+              raise SystemExit("no task was scored")
+          PY

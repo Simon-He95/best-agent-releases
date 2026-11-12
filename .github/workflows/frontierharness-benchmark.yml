@@ -21,6 +21,11 @@ on:
         required: true
         type: boolean
         default: true
+      full_set:
+        description: Run all 62 v1.1 tasks with the selected model
+        required: true
+        type: boolean
+        default: false
       tasks:
         description: Explicit comma-separated task subset for a model run
         required: false
@@ -61,11 +66,20 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Require explicit tasks for model runs
-        if: ${{ !inputs.verify_only && inputs.tasks == '' }}
+      - name: Validate model run selection
+        if: ${{ !inputs.verify_only }}
+        env:
+          BENCH_FULL_SET: ${{ inputs.full_set }}
+          BENCH_TASKS: ${{ inputs.tasks }}
         run: |
-          echo "Model runs on this workflow require an explicit task subset." >&2
-          exit 2
+          if [ "$BENCH_FULL_SET" = true ] && [ -n "$BENCH_TASKS" ]; then
+            echo "Choose either full_set or a task subset." >&2
+            exit 2
+          fi
+          if [ "$BENCH_FULL_SET" = false ] && [ -z "$BENCH_TASKS" ]; then
+            echo "Choose full_set or provide an explicit task subset." >&2
+            exit 2
+          fi
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -127,7 +141,7 @@ jobs:
           harbor --version
           python3 --version
 
-      - name: Run the benchmark subset
+      - name: Run the benchmark
         if: ${{ !inputs.verify_only }}
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}

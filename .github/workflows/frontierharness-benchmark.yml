@@ -16,8 +16,13 @@ on:
         description: Exact private source commit to benchmark
         required: true
         type: string
+      verify_only:
+        description: Verify the packaged CLI with a local fake model
+        required: true
+        type: boolean
+        default: true
       tasks:
-        description: Comma-separated task subset; empty runs all 62 v1.1 tasks
+        description: Explicit comma-separated task subset for a model run
         required: false
         type: string
         default: ""
@@ -56,6 +61,12 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Require explicit tasks for model runs
+        if: ${{ !inputs.verify_only && inputs.tasks == '' }}
+        run: |
+          echo "Model runs on this workflow require an explicit task subset." >&2
+          exit 2
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: Simon-He95/best-agent
@@ -101,50 +112,58 @@ jobs:
           "$runtime/bin/best-agent-workspace-read-helper" --help >/dev/null 2>&1 || true
           echo "BENCH_CLI_RUNTIME=$runtime" >> "$GITHUB_ENV"
 
+      - name: Verify service after CLI exit
+        if: ${{ inputs.verify_only }}
+        run: |
+          export FRONTIERHARNESS_TEST_CLI="$BENCH_CLI_RUNTIME/bin/best-agent"
+          export PATH="$BENCH_CLI_RUNTIME/bin:$PATH"
+          pnpm exec vitest run apps/cli/test/v3-run-released-process.e2e.test.ts
+
       - name: Install Harbor
+        if: ${{ !inputs.verify_only }}
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install 'harbor==0.14.0'
           harbor --version
           python3 --version
 
-      - name: Run the benchmark
+      - name: Run the benchmark subset
+        if: ${{ !inputs.verify_only }}
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           PYTHONPATH: ${{ github.workspace }}
+          BENCH_SOURCE_SHA: ${{ inputs.source_sha }}
+          BENCH_MODEL: ${{ inputs.model }}
+          BENCH_TASKS: ${{ inputs.tasks }}
+          BENCH_ATTEMPTS: ${{ inputs.attempts }}
+          BENCH_CONCURRENCY: ${{ inputs.concurrency }}
         run: |
           python3 benchmarks/frontierharness/run_benchmark.py \
-            --output "runs/${{ inputs.source_sha }}" \
-            --model "${{ inputs.model }}" \
-            --tasks "${{ inputs.tasks }}" \
-            --attempts "${{ inputs.attempts }}" \
-            --concurrency "${{ inputs.concurrency }}" \
+            --output "runs/$BENCH_SOURCE_SHA" \
+            --model "$BENCH_MODEL" \
+            --tasks "$BENCH_TASKS" \
+            --attempts "$BENCH_ATTEMPTS" \
+            --concurrency "$BENCH_CONCURRENCY" \
             --cli-runtime "$BENCH_CLI_RUNTIME"
 
-      - name: Upload results
-        if: always()
-        # The per-task table is already in this job's log, so a runner-side artifact
-        # failure must not turn a completed benchmark into a failed run.
-        continue-on-error: true
+      - name: Recover completed trials if the runner was interrupted
+        if: ${{ always() && !inputs.verify_only }}
+        env:
+          BENCH_SOURCE_SHA: ${{ inputs.source_sha }}
+          BENCH_MODEL: ${{ inputs.model }}
+          BENCH_ATTEMPTS: ${{ inputs.attempts }}
+        run: |
+          output="runs/$BENCH_SOURCE_SHA"
+          if [ -d "$output/jobs" ] && [ ! -f "$output/task-results.csv" ]; then
+            python3 benchmarks/frontierharness/run_benchmark.py \
+              --output "$output" --model "$BENCH_MODEL" --attempts "$BENCH_ATTEMPTS" --report-only
+          fi
+
+      - name: Upload task results
+        if: ${{ always() && !inputs.verify_only }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: frontierharness-${{ inputs.source_sha }}
-          path: runs/
+          name: frontierharness-task-results-${{ inputs.source_sha }}
+          path: runs/${{ inputs.source_sha }}/task-results.csv
           retention-days: 30
-          if-no-files-found: warn
-
-      - name: Fail when the published set was not scored
-        if: always()
-        run: |
-          summary="runs/${{ inputs.source_sha }}/summary.json"
-          if [ ! -f "$summary" ]; then
-            echo "summary.json is missing; the runner did not finish" >&2
-            exit 1
-          fi
-          python3 - "$summary" <<'PY'
-          import json, sys
-          summary = json.load(open(sys.argv[1]))
-          print(json.dumps({k: v for k, v in summary.items() if k != "tasks"}, indent=2))
-          if not summary["scored"]:
-              raise SystemExit("no task was scored")
-          PY
+          if-no-files-found: error

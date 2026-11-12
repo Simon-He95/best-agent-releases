@@ -167,3 +167,21 @@ jobs:
           path: runs/${{ inputs.source_sha }}/task-results.csv
           retention-days: 30
           if-no-files-found: error
+
+      - name: Require a scored task
+        if: ${{ always() && !inputs.verify_only }}
+        env:
+          BENCH_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          python3 - "runs/$BENCH_SOURCE_SHA/task-results.csv" <<'PY'
+          import csv
+          import sys
+          from pathlib import Path
+
+          report = Path(sys.argv[1])
+          if not report.is_file():
+              raise SystemExit("task-results.csv is missing")
+          with report.open(newline="") as file:
+              if not any(row["reward"] for row in csv.DictReader(file)):
+                  raise SystemExit("no task was scored")
+          PY

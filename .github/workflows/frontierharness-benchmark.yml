@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: frontierharness-${{ inputs.source_sha }}
+  group: frontierharness-${{ inputs.source_sha }}-${{ inputs.label }}
   cancel-in-progress: false
 
 jobs:

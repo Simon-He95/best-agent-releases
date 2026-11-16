@@ -22,7 +22,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: native-read-helper-verification
+  group: native-read-helper-windows-diagnostics
   cancel-in-progress: false
 jobs:
   prepare:

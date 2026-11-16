@@ -26,7 +26,6 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prepare:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -55,18 +54,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: darwin-arm64
-            runner: macos-15
-          - target: darwin-x64
-            runner: macos-15-intel
-          - target: linux-arm64-gnu
-            runner: ubuntu-24.04-arm
-          - target: linux-x64-gnu
-            runner: ubuntu-24.04
           - target: win32-arm64
             runner: windows-11-arm
-          - target: win32-x64
-            runner: windows-2025
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -142,33 +131,3 @@ jobs:
           retention-days: 1
           if-no-files-found: ignore
 
-  distribute:
-    needs: [prepare, build]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - name: Write isolated verification request
-        shell: bash
-        env:
-          REQUEST_SHA: ${{ inputs.source_sha }}
-          REQUEST_VERSION: ${{ inputs.version }}
-        run: node -e 'require("fs").writeFileSync("build-request.json", JSON.stringify({sourceRepository:"Simon-He95/best-agent",sourceSha:process.env.REQUEST_SHA,version:process.env.REQUEST_VERSION})+"\n")'
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: Simon-He95/best-agent
-          ref: ${{ needs.prepare.outputs.sha }}
-          ssh-key: ${{ secrets.SOURCE_SSH_KEY }}
-          persist-credentials: false
-          path: source
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version-file: source/.nvmrc
-      - run: node source/scripts/public-distribution/build.mjs verify
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}

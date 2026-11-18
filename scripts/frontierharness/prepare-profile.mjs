@@ -13,6 +13,7 @@ const bundle = readFileSync(path, "utf8");
 const needle = JSON.stringify(baseline);
 if (bundle.split(needle).length !== 2) throw new Error("Expected one pinned behavior instruction");
 writeFileSync(path, bundle.replace(needle, JSON.stringify(chosen)));
+writeFileSync(join(process.env.FH_ROOT, "raw/runtime-index.js"), readFileSync(path));
 writeFileSync(join(process.env.FH_ROOT, "report/profile.json"), JSON.stringify({
   profile,
   source_sha: process.env.SOURCE_SHA,

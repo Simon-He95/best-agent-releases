@@ -4,15 +4,23 @@ on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: Exact merged private source commit
+        description: Exact private source commit
         required: true
         type: string
+      profile:
+        description: Behavior instruction profile
+        required: true
+        type: choice
+        options:
+          - short
+          - claude
+        default: short
       recipient_key:
-        description: Public age key for encrypted benchmark diagnostics
+        description: Public age key for encrypted diagnostics
         required: true
         type: string
       tasks:
-        description: Optional comma-separated public task subset
+        description: Comma-separated subset of the 57-task comparison cohort
         required: false
         type: string
         default: ""
@@ -20,13 +28,13 @@ on:
         description: Unique run label
         required: false
         type: string
-        default: full62
+        default: oauth57
 
 permissions:
   contents: read
 
 concurrency:
-  group: frontierharness-${{ inputs.source_sha }}-${{ inputs.label }}
+  group: frontierharness-${{ inputs.source_sha }}-${{ inputs.profile }}-${{ inputs.label }}
   cancel-in-progress: false
 
 jobs:
@@ -55,18 +63,22 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/frontier/venv"
           "$RUNNER_TEMP/frontier/venv/bin/pip" install 'harbor==0.14.0'
           corepack enable
-      - name: Build the confirmed source
+      - name: Build the pinned profile
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
+          FH_PROFILE: ${{ inputs.profile }}
         run: |
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
           export FH_ROOT="$RUNNER_TEMP/frontier"
-          bash scripts/frontierharness/build.sh > "$FH_ROOT/raw/build.log" 2>&1
+          bash scripts/frontierharness/build.sh >"$FH_ROOT/raw/build.log" 2>&1
+          node scripts/frontierharness/prepare-profile.mjs >"$FH_ROOT/raw/profile.log" 2>&1
           printf '%s\n' "$SOURCE_SHA"
-      - name: Run official DeepSeek on FrontierHarness v1.1
+          uname -m
+      - name: Run Dim OAuth on FrontierHarness v1.1
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          FH_DIM_OAUTH_SESSION: ${{ secrets.FH_DIM_OAUTH_SESSION }}
+          FH_PROFILE: ${{ inputs.profile }}
           FH_TASKS: ${{ inputs.tasks }}
         run: bash scripts/frontierharness/run.sh
       - name: Encrypt raw diagnostics
@@ -79,7 +91,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: frontierharness-v11-${{ inputs.label }}
+          name: frontierharness-v11-${{ inputs.profile }}-${{ inputs.label }}
           path: ${{ runner.temp }}/frontier/report/
           retention-days: 7
           if-no-files-found: error

@@ -13,6 +13,7 @@ on:
         type: choice
         options:
           - short
+          - short-trace-boundary
           - claude
           - codex
         default: short

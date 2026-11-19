@@ -7,6 +7,8 @@ script_root=$(cd "$(dirname "$0")" && pwd)
 export PYTHONPATH="$script_root:$PWD/source"
 export FH_REPO="$PWD/source"
 export FH_LEDGER="$FH_ROOT/raw/transport.jsonl"
+export FH_RESULT_EXPORT="$FH_ROOT/raw/exec-results"
+mkdir -m 0755 "$FH_RESULT_EXPORT"
 test -n "${FH_DIM_OAUTH_SESSION:-}"
 test "$FH_PROFILE" = short
 case "$FH_EXPERIMENT" in
@@ -50,7 +52,11 @@ if [ "$FH_EXPERIMENT" = probe ]; then
   exit 0
 fi
 "$FH_ROOT/venv/bin/python" "$script_root/prepare-tasks.py" >"$FH_ROOT/raw/prepare-tasks.log" 2>&1
-mounts=$(python3 -c 'import json,sys;print(json.dumps([dict(type="bind",source=sys.argv[1],target="/opt/best-agent",read_only=True)]))' "$FH_ROOT/runtime")
+node --input-type=module <<'CUTOFF'
+import { DEFAULT_WORKSPACE_EXEC_DEFAULT_CUTOFF_MS } from "./source/apps/cli/dist/product-slices/contracts.js";
+if (DEFAULT_WORKSPACE_EXEC_DEFAULT_CUTOFF_MS !== 120_000) throw new Error("Unexpected exec cutoff");
+CUTOFF
+mounts=$(python3 -c 'import json,sys;print(json.dumps([dict(type="bind",source=sys.argv[1],target="/opt/best-agent",read_only=True),dict(type="bind",source=sys.argv[2],target="/app/.best-agent-exec-results",read_only=True)]))' "$FH_ROOT/runtime" "$FH_RESULT_EXPORT")
 result=0
 "$FH_ROOT/venv/bin/harbor" run -c "$FH_ROOT/raw/job-config.json" -e docker -k 1 -n 1 -y \
   --agent-import-path candidate:Candidate --model openai/deepseek-v4.1-flash \

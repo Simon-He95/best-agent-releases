@@ -36,13 +36,15 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
     root_id = None
     source_failure = None
+    source_http_status = None
+    reference_reads = 0
     terminal = None
     trace = path.parent / "agent/best-agent-evidence.jsonl"
     if trace.exists():
         for line in trace.open("rb"):
             if not any(marker in line[:130] for marker in (
                 b'"type":"header"', b'"type":"model-failure-diagnostic"',
-                b'"type":"terminal-snapshot"',
+                b'"type":"terminal-snapshot"', b'"type":"model-outcome"',
             )):
                 continue
             event = json.loads(line)
@@ -50,13 +52,23 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
                 root_id = event["rootRunId"]
             elif event.get("runId") == root_id and event["type"] == "model-failure-diagnostic":
                 source_failure = event["sourceReason"]
+                source_http_status = event["diagnostic"].get("statusCode")
             elif event.get("runId") == root_id and event["type"] == "terminal-snapshot":
                 terminal = event["snapshot"]["status"]
+            elif event["type"] == "model-outcome":
+                tool_calls = (event.get("outcome", {}).get("candidate") or {}).get("toolCalls", [])
+                reference_reads += sum(
+                    call["name"] in ("read", "search", "exec", "process-start")
+                    and ".best-agent-exec-results/" in json.dumps(call.get("input"))
+                    for call in tool_calls
+                )
     exception = (result.get("exception_info") or {}).get("exception_type")
     reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
     statuses = [v["status"] for v in entries if v["phase"] == "headers"]
     if exception == "AgentTimeoutError":
         outcome = "timeout"
+    elif source_http_status in (400, 413) and source_failure == "transport":
+        outcome = "request_rejected"
     elif source_failure in ("connection", "transport"):
         outcome = "infra"
     elif reward == 1 and not exception:
@@ -79,7 +91,22 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         if b"curl: (18)" in tail and b"uvx: command not found" in tail:
             outcome = "infra"
             exception = "VerifierBootstrapDownloadFailed"
+    projections = [entry for entry in entries if entry["phase"] == "projected"]
+    retained = [entry for entry in entries if entry["phase"] == "retained"]
+    forwarded_sizes = {entry["id"]: entry["after"] for entry in projections}
     rows.append({
+        "experiment": os.environ["FH_EXPERIMENT"], "exec_cutoff_ms": 120_000,
+        "source_http_status": source_http_status,
+        "projected_requests": len(projections), "reference_reads": reference_reads,
+        "retained_receipts": len(retained),
+        "retained_stdout_bytes": sum(entry["stdoutBytes"] for entry in retained),
+        "retention_failures": sum(entry["phase"] == "retention-failure" for entry in entries),
+        "projected_wire_bytes_saved": sum(entry["before"] - entry["after"] for entry in projections),
+        "peak_reported_prompt_tokens": max((v.get("prompt_tokens", 0) for v in receipts), default=0),
+        "max_forwarded_request_bytes": max(
+            (forwarded_sizes.get(entry["id"], entry["bytes"])
+             for entry in requests), default=0,
+        ),
         "task": result["task_name"], "profile": profile["profile"], "outcome": outcome,
         "reward": reward, "exception": exception, "source_failure": source_failure,
         "terminal": terminal, "checksum": result["task_checksum"],
@@ -110,7 +137,7 @@ summary = {
     "planned": planned, "completed": len(rows),
     **{
         label: sum(r["outcome"] == label for r in rows)
-        for label in ("pass", "fail", "timeout", "infra")
+        for label in ("pass", "fail", "timeout", "request_rejected", "infra")
     },
     **{
         label: sum(r[label] for r in rows)

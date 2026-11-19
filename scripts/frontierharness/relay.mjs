@@ -1,3 +1,4 @@
+import { projectExecOutput } from "./output-delivery.mjs";
 import { appendFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
@@ -61,7 +62,7 @@ const server = createServer(async (request, response) => {
       }
       chunks.push(chunk);
     }
-    const body = Buffer.concat(chunks);
+    let body = Buffer.concat(chunks);
     const payload=JSON.parse(body.toString());
     if (payload.model !== model) {
       response.writeHead(400).end();
@@ -83,6 +84,10 @@ const server = createServer(async (request, response) => {
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
       ...(first?{tool_count:payload.tools?.length,tool_digest:digest(payload.tools ?? []),system_count:system.length,
          baseline_first_instruction:digest(system[0] ?? null),deadline:system.some(x=>String(x).includes("Run deadline (UTC)"))}:{})});
+    if (process.env.FH_EXPERIMENT === "on-demand") {
+      body = projectExecOutput(payload, body, process.env.FH_RESULT_EXPORT,
+                               row => log({ tag, id, ...row }));
+    }
     const credential = { access: session.access };
     const upstream = await new Promise((resolve, reject) => {
       const outbound = requestHttps(target, {

@@ -192,16 +192,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUST_CLASSIC_SSH_KEY: ${{ secrets.RUST_CLASSIC_SSH_KEY }}
           RUSTUP_TOOLCHAIN: 1.98.1-${{ matrix.rust_host }}
-      - name: Preserve encrypted Rust verification evidence
+      - name: Preserve encrypted Rust archives and verification evidence
         if: always() && inputs.artifact == 'rust'
         uses: actions/upload-artifact@v4
         with:
           name: rust-verification-${{ matrix.target }}
           path: |
+            output/rust-${{ matrix.target }}.archive.enc
             output/rust-${{ matrix.target }}.metadata.enc
             output/rust-${{ matrix.target }}.log.enc
             output/${{ matrix.target }}.log.enc
           retention-days: 1
+          compression-level: 0
           if-no-files-found: ignore
 
   distribute:

@@ -20,7 +20,7 @@ const assets = (process.env.DIAGNOSTIC_ASSETS ?? "").split(",");
 const targetLog =
   /^(darwin-arm64|darwin-x64|linux-arm64-gnu|linux-x64-gnu|win32-arm64|win32-x64)\.log\.enc$/;
 const rustEvidence =
-  /^rust-(darwin-arm64|darwin-x64|linux-arm64-gnu|linux-x64-gnu|win32-arm64|win32-x64)\.(?:log|metadata)\.enc$/;
+  /^rust-(darwin-arm64|darwin-x64|linux-arm64-gnu|linux-x64-gnu|win32-arm64|win32-x64)\.(?:log|metadata|archive)\.enc$/;
 if (
   assets.some(
     (asset) =>
@@ -51,6 +51,11 @@ if (run) {
     workflow.head_branch !== "main"
   )
     throw new Error("Rust diagnostics require a manual verification run on main.");
+  if (
+    assets.some((asset) => asset.endsWith(".archive.enc")) &&
+    (workflow.status !== "completed" || workflow.conclusion !== "success")
+  )
+    throw new Error("Rust archives require a successful verification run.");
   const targets = new Set(
     assets.map((asset) => (rustEvidence.exec(asset) ?? targetLog.exec(asset))[1]),
   );

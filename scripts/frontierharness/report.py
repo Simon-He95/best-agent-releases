@@ -34,6 +34,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         assert first["model"] == "deepseek-v4.1-flash"
         assert first["tool_count"] == 31 and first["deadline"] is False
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
+        assert {r.get("effort") for r in requests} == {"max"}
     root_id = None
     source_failure = None
     terminal = None

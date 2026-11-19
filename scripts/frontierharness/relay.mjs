@@ -78,7 +78,7 @@ const server = createServer(async (request, response) => {
       }
     }
     const diagReplies=msg.filter(m=>m.role==="tool"&&diag.has(m.tool_call_id));
-    log({tag,id,phase:"request",bytes:body.length,model:payload.model,
+    log({tag,id,phase:"request",bytes:body.length,model:payload.model,effort:payload.reasoning_effort,
       self_diagnostic_call_ids:[...diag],
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
       ...(first?{tool_count:payload.tools?.length,tool_digest:digest(payload.tools ?? []),system_count:system.length,

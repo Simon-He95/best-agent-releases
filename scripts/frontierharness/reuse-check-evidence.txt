@@ -1,0 +1,1 @@
+When a completed check already establishes a property of an unchanged artifact, carry that evidence forward and check only the requirements that remain unverified.

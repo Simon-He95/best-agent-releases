@@ -8,7 +8,10 @@ export PYTHONPATH="$script_root:$PWD/source"
 export FH_REPO="$PWD/source"
 export FH_LEDGER="$FH_ROOT/raw/transport.jsonl"
 test -n "${FH_DIM_OAUTH_SESSION:-}"
-test -n "$FH_TASKS"
+case "$FH_TASKS" in
+  adaptive-rejection-sampler|sqlite-db-truncate|regex-log) ;;
+  *) exit 2 ;;
+esac
 node --input-type=module <<'CUTOFF'
 import { DEFAULT_WORKSPACE_EXEC_DEFAULT_CUTOFF_MS } from "./source/apps/cli/dist/product-slices/contracts.js";
 if (DEFAULT_WORKSPACE_EXEC_DEFAULT_CUTOFF_MS !== 120_000) throw new Error("Unexpected exec cutoff");
@@ -44,7 +47,7 @@ mounts=$(python3 -c 'import json,sys;print(json.dumps([dict(type="bind",source=s
 result=0
 "$FH_ROOT/venv/bin/harbor" run -c "$FH_ROOT/raw/job-config.json" -e docker -k 1 -n 1 -y \
   --agent-import-path candidate:Candidate --model openai/deepseek-v4.1-flash \
-  --ak base_instructions=true --ak api_key_env=FH_OAUTH_REPRO_PROXY_KEY \
+  --ak base_instructions=true --ak api_key_env=FH_OAUTH_REPRO_PROXY_KEY --ak effort=max \
   --jobs-dir "$FH_ROOT/raw/jobs" --mounts "$mounts" >"$FH_ROOT/raw/harbor.log" 2>&1 || result=$?
 "$FH_ROOT/venv/bin/python" "$script_root/report.py"
 exit "$result"

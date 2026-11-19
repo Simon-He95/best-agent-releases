@@ -11,16 +11,21 @@ if (
 )
   throw new Error("Manual main-only diagnostic export required.");
 const tag = process.env.DIAGNOSTIC_TAG;
-if (!/^cli-v[0-9A-Za-z.-]+-[a-f0-9]{12}$/.test(tag ?? ""))
+const run = process.env.DIAGNOSTIC_RUN;
+if (Boolean(tag) === Boolean(run)) throw new Error("Provide one diagnostic tag or Actions run.");
+if (tag && !/^cli-v[0-9A-Za-z.-]+-[a-f0-9]{12}$/.test(tag))
   throw new Error("Invalid diagnostic tag.");
-const assets = process.env.DIAGNOSTIC_ASSETS.split(",");
+if (run && !/^[1-9][0-9]{0,19}$/.test(run)) throw new Error("Invalid diagnostic Actions run.");
+const assets = (process.env.DIAGNOSTIC_ASSETS ?? "").split(",");
+const targetLog =
+  /^(darwin-arm64|darwin-x64|linux-arm64-gnu|linux-x64-gnu|win32-arm64|win32-x64)\.log\.enc$/;
+const rustEvidence =
+  /^rust-(darwin-arm64|darwin-x64|linux-arm64-gnu|linux-x64-gnu|win32-arm64|win32-x64)\.(?:log|metadata)\.enc$/;
 if (
-  !assets.length ||
   assets.some(
     (asset) =>
-      !/^(darwin-arm64|darwin-x64|linux-arm64-gnu|linux-x64-gnu|win32-arm64|win32-x64|assemble|source-gate)\.log\.enc$/.test(
-        asset,
-      ),
+      !targetLog.test(asset) &&
+      !(run ? rustEvidence.test(asset) : /^(assemble|source-gate)\.log\.enc$/.test(asset)),
   )
 )
   throw new Error("Invalid diagnostic asset selection.");
@@ -35,22 +40,50 @@ const input = path.join(process.env.RUNNER_TEMP, "native-private-diagnostics");
 const output = path.join(process.env.RUNNER_TEMP, "native-resealed-diagnostics");
 mkdirSync(input, { recursive: true, mode: 0o700 });
 mkdirSync(output, { recursive: true, mode: 0o700 });
-for (const asset of assets) {
-  execFileSync(
-    "gh",
-    [
-      "release",
-      "download",
-      tag,
-      "--repo",
-      process.env.GITHUB_REPOSITORY,
-      "--pattern",
-      asset,
-      "--dir",
-      input,
-    ],
-    { stdio: ["ignore", "ignore", "inherit"] },
+const repository = process.env.GITHUB_REPOSITORY;
+if (run) {
+  const workflow = JSON.parse(
+    execFileSync("gh", ["api", `repos/${repository}/actions/runs/${run}`], { encoding: "utf8" }),
   );
+  if (
+    workflow.path !== ".github/workflows/native-read-helper.yml" ||
+    workflow.event !== "workflow_dispatch" ||
+    workflow.head_branch !== "main"
+  )
+    throw new Error("Rust diagnostics require a manual verification run on main.");
+  const targets = new Set(
+    assets.map((asset) => (rustEvidence.exec(asset) ?? targetLog.exec(asset))[1]),
+  );
+  for (const target of targets) {
+    execFileSync(
+      "gh",
+      [
+        "run",
+        "download",
+        run,
+        "--repo",
+        repository,
+        "--name",
+        `rust-verification-${target}`,
+        "--dir",
+        input,
+      ],
+      {
+        stdio: ["ignore", "ignore", "inherit"],
+      },
+    );
+  }
+}
+for (const asset of assets) {
+  if (tag) {
+    execFileSync(
+      "gh",
+      ["release", "download", tag, "--repo", repository, "--pattern", asset, "--dir", input],
+      {
+        stdio: ["ignore", "ignore", "inherit"],
+      },
+    );
+  }
   const plaintext = unseal(readFileSync(path.join(input, asset)), key);
   const transferKey = randomBytes(32);
   writeFileSync(

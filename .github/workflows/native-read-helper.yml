@@ -10,6 +10,11 @@ on:
         description: Matching CLI version (no npm publication)
         required: true
         type: string
+      artifact:
+        description: Artifact to verify
+        type: choice
+        default: sea
+        options: [sea, rust]
       measure_tui_cost:
         description: Run the fixed private paired TUI experiment on macOS ARM64
         required: false
@@ -45,6 +50,7 @@ jobs:
       - id: request
         run: node build.mjs request
       - run: node build.mjs prepare
+        if: inputs.artifact == 'sea'
         env:
           GH_TOKEN: ${{ github.token }}
   build:
@@ -57,16 +63,22 @@ jobs:
         include:
           - target: darwin-arm64
             runner: macos-15
+            rust_host: aarch64-apple-darwin
           - target: darwin-x64
             runner: macos-15-intel
+            rust_host: x86_64-apple-darwin
           - target: linux-arm64-gnu
             runner: ubuntu-24.04-arm
+            rust_host: aarch64-unknown-linux-gnu
           - target: linux-x64-gnu
             runner: ubuntu-24.04
+            rust_host: x86_64-unknown-linux-gnu
           - target: win32-arm64
             runner: windows-11-arm
+            rust_host: aarch64-pc-windows-msvc
           - target: win32-x64
             runner: windows-2025
+            rust_host: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -102,9 +114,22 @@ jobs:
         with:
           arch: ${{ matrix.target == 'win32-arm64' && 'amd64_arm64' || 'x64' }}
       - uses: dtolnay/rust-toolchain@1.84.0
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && inputs.artifact == 'sea'
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
+        if: inputs.artifact == 'rust'
+        with:
+          toolchain: 1.98.1-${{ matrix.rust_host }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        if: inputs.artifact == 'rust'
+        with:
+          python-version: '3.12'
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29
+        if: inputs.artifact == 'rust'
+        with:
+          version: '0.17.1'
+          use-cache: false
       - name: Compare isolated TUI cost on a dedicated runner
-        if: inputs.measure_tui_cost && matrix.target == 'darwin-arm64'
+        if: inputs.artifact == 'sea' && inputs.measure_tui_cost && matrix.target == 'darwin-arm64'
         shell: bash
         env:
           REQUEST_SHA: ${{ inputs.source_sha }}
@@ -120,7 +145,7 @@ jobs:
           process.exit(result.status === 0 ? 0 : 1);
           JS
       - name: Preserve sanitized measurements and encrypted raw evidence
-        if: always() && inputs.measure_tui_cost && matrix.target == 'darwin-arm64'
+        if: always() && inputs.artifact == 'sea' && inputs.measure_tui_cost && matrix.target == 'darwin-arm64'
         uses: actions/upload-artifact@v4
         with:
           name: tui-cost-evidence
@@ -130,20 +155,40 @@ jobs:
           retention-days: 7
           if-no-files-found: error
       - run: node source/scripts/public-distribution/build.mjs build ${{ matrix.target }}
+        if: inputs.artifact == 'sea'
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
       - name: Preserve encrypted diagnostics after failure
-        if: failure()
+        if: failure() && inputs.artifact == 'sea'
         uses: actions/upload-artifact@v4
         with:
           name: native-diagnostics-${{ matrix.target }}
           path: output/${{ matrix.target }}.log.enc
           retention-days: 1
           if-no-files-found: ignore
+      - name: Verify the installed Rust archive
+        if: inputs.artifact == 'rust'
+        shell: bash
+        run: node source/scripts/public-distribution/build.mjs rust-verify ${{ matrix.target }}
+        env:
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+          RUSTUP_TOOLCHAIN: 1.98.1-${{ matrix.rust_host }}
+      - name: Preserve encrypted Rust verification evidence
+        if: always() && inputs.artifact == 'rust'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-verification-${{ matrix.target }}
+          path: |
+            output/rust-${{ matrix.target }}.metadata.enc
+            output/rust-${{ matrix.target }}.log.enc
+            output/${{ matrix.target }}.log.enc
+          retention-days: 1
+          if-no-files-found: ignore
 
   distribute:
     needs: [prepare, build]
+    if: inputs.artifact == 'sea'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

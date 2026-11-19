@@ -39,6 +39,7 @@ const server = createServer(async (request, response) => {
     return;
   }
   const tag=route[1], id=++ordinal;
+  const started = performance.now();
   const abort = new AbortController();
   let usage, status, recorded=false;
   const recordEnd = ended => {
@@ -78,7 +79,7 @@ const server = createServer(async (request, response) => {
       }
     }
     const diagReplies=msg.filter(m=>m.role==="tool"&&diag.has(m.tool_call_id));
-    log({tag,id,phase:"request",bytes:body.length,model:payload.model,
+    log({tag,id,phase:"request",bytes:body.length,model:payload.model,effort:payload.reasoning_effort,
       self_diagnostic_call_ids:[...diag],
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
       ...(first?{tool_count:payload.tools?.length,tool_digest:digest(payload.tools ?? []),system_count:system.length,
@@ -98,7 +99,7 @@ const server = createServer(async (request, response) => {
       outbound.end(body);
     });
     status=upstream.statusCode;
-    log({tag,id,phase:"headers",status});
+    log({tag,id,phase:"headers",status,elapsedMs:Math.round(performance.now() - started)});
     const sse = String(upstream.headers["content-type"]).includes("text/event-stream");
     let pending="";
     const observe=line=>{

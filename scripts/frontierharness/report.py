@@ -34,6 +34,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         assert first["model"] == "deepseek-v4.1-flash"
         assert first["tool_count"] == 31 and first["deadline"] is False
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
+        assert {r.get("effort") for r in requests} == {os.environ["FH_EFFORT"]}
     root_id = None
     source_failure = None
     terminal = None
@@ -81,7 +82,14 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
             exception = "VerifierBootstrapDownloadFailed"
     timing_path = path.parent / "agent/artifact-timing.json"
     timing = json.loads(timing_path.read_text()) if timing_path.is_file() else None
+    headers = [v for v in entries if v["phase"] == "headers"]
+    last_headers = next((v for v in reversed(headers) if requests and v["id"] == requests[-1]["id"]), None)
     rows.append({
+        "effort": os.environ["FH_EFFORT"],
+        "wire_effort": requests[0].get("effort") if requests else None,
+        "last_model_headers_ms": last_headers["elapsedMs"] if last_headers else None,
+        "peak_model_headers_ms": max((v["elapsedMs"] for v in headers), default=None),
+        "reasoning_tokens": sum((v.get("completion_tokens_details") or {}).get("reasoning_tokens", 0) for v in receipts),
         "exec_cutoff_ms": 120_000, "artifact_timing": json.dumps(timing),
         "task": result["task_name"], "profile": profile["profile"], "outcome": outcome,
         "reward": reward, "exception": exception, "source_failure": source_failure,

@@ -13,8 +13,15 @@ on:
         type: choice
         options:
           - short
-          - deliverable-early
         default: short
+      effort:
+        description: Dim OAuth reasoning effort for the A/B arm
+        required: true
+        type: choice
+        options:
+          - max
+          - high
+        default: max
       recipient_key:
         description: Public age key for encrypted diagnostics
         required: true
@@ -80,6 +87,7 @@ jobs:
           FH_DIM_OAUTH_SESSION: ${{ secrets.FH_DIM_OAUTH_SESSION }}
           FH_PROFILE: ${{ inputs.profile }}
           FH_TASKS: ${{ inputs.tasks }}
+          FH_EFFORT: ${{ inputs.effort }}
         run: bash scripts/frontierharness/run.sh
       - name: Encrypt raw diagnostics
         if: always()

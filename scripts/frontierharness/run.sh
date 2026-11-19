@@ -8,6 +8,17 @@ export PYTHONPATH="$script_root:$PWD/source"
 export FH_REPO="$PWD/source"
 export FH_LEDGER="$FH_ROOT/raw/transport.jsonl"
 test -n "${FH_DIM_OAUTH_SESSION:-}"
+test "$FH_PROFILE" = short
+case "$FH_EXPERIMENT" in
+  probe) test -z "$FH_TASKS" ;;
+  baseline|on-demand)
+    case "$FH_TASKS" in
+      vpp-loss-divergence|sqlite-db-truncate|regex-log) ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac
 node -e 'console.log("::add-mask::" + JSON.parse(process.env.FH_DIM_OAUTH_SESSION).access)'
 
 unset DEEPSEEK_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY BEST_AGENT_PROVIDER_API_KEY
@@ -34,6 +45,10 @@ d=json.loads((Path(os.environ["FH_ROOT"])/"raw/preflight.json").read_text())
 assert d.get("choices") and d.get("usage"), "Missing authenticated model response or usage"
 CHECK
 printf 'Dim OAuth authenticated model preflight passed\n'
+if [ "$FH_EXPERIMENT" = probe ]; then
+  node "$script_root/request-size-probe.mjs"
+  exit 0
+fi
 "$FH_ROOT/venv/bin/python" "$script_root/prepare-tasks.py" >"$FH_ROOT/raw/prepare-tasks.log" 2>&1
 mounts=$(python3 -c 'import json,sys;print(json.dumps([dict(type="bind",source=sys.argv[1],target="/opt/best-agent",read_only=True)]))' "$FH_ROOT/runtime")
 result=0

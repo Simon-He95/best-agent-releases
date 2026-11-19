@@ -16,6 +16,15 @@ on:
           - claude
           - codex
         default: short
+      experiment:
+        description: Request-size probe or single-task stdout A/B arm
+        required: true
+        type: choice
+        options:
+          - baseline
+          - on-demand
+          - probe
+        default: baseline
       recipient_key:
         description: Public age key for encrypted diagnostics
         required: true
@@ -81,6 +90,7 @@ jobs:
           FH_DIM_OAUTH_SESSION: ${{ secrets.FH_DIM_OAUTH_SESSION }}
           FH_PROFILE: ${{ inputs.profile }}
           FH_TASKS: ${{ inputs.tasks }}
+          FH_EXPERIMENT: ${{ inputs.experiment }}
         run: bash scripts/frontierharness/run.sh
       - name: Encrypt raw diagnostics
         if: always()

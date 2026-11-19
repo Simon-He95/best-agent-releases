@@ -7,6 +7,10 @@ from pathlib import Path
 
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
+budgets = {
+    row["tag"]: row for line in (root / "raw/budget.jsonl").open()
+    if (row := json.loads(line))
+}
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -37,6 +41,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     root_id = None
     source_failure = None
     terminal = None
+    terminal_cause = None
     trace = path.parent / "agent/best-agent-evidence.jsonl"
     if trace.exists():
         for line in trace.open("rb"):
@@ -52,6 +57,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
                 source_failure = event["sourceReason"]
             elif event.get("runId") == root_id and event["type"] == "terminal-snapshot":
                 terminal = event["snapshot"]["status"]
+                terminal_cause = event["snapshot"].get("terminalCause")
     exception = (result.get("exception_info") or {}).get("exception_type")
     reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
     statuses = [v["status"] for v in entries if v["phase"] == "headers"]
@@ -79,7 +85,14 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         if b"curl: (18)" in tail and b"uvx: command not found" in tail:
             outcome = "infra"
             exception = "VerifierBootstrapDownloadFailed"
+    budget = budgets[path.parent.name]
     rows.append({
+        "budget_arm": budget["arm"], "harbor_budget_ms": budget["harbor_budget_ms"],
+        "pre_launch_elapsed_ms": budget["elapsed_ms"],
+        "passed_remaining_ms": budget["passed_remaining_ms"],
+        "exec_cutoff_ms": 120_000,
+        "terminal_cause": json.dumps(terminal_cause, ensure_ascii=False),
+        "verifier_pass_with_agent_exception": bool(reward == 1 and exception),
         "task": result["task_name"], "profile": profile["profile"], "outcome": outcome,
         "reward": reward, "exception": exception, "source_failure": source_failure,
         "terminal": terminal, "checksum": result["task_checksum"],

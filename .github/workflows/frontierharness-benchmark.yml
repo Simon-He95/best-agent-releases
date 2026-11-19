@@ -16,6 +16,14 @@ on:
           - claude
           - codex
         default: short
+      budget:
+        description: Headless attempt budget A/B arm
+        required: true
+        type: choice
+        options:
+          - baseline
+          - remaining
+        default: baseline
       recipient_key:
         description: Public age key for encrypted diagnostics
         required: true
@@ -81,6 +89,7 @@ jobs:
           FH_DIM_OAUTH_SESSION: ${{ secrets.FH_DIM_OAUTH_SESSION }}
           FH_PROFILE: ${{ inputs.profile }}
           FH_TASKS: ${{ inputs.tasks }}
+          FH_BUDGET_ARM: ${{ inputs.budget }}
         run: bash scripts/frontierharness/run.sh
       - name: Encrypt raw diagnostics
         if: always()

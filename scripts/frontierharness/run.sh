@@ -8,6 +8,19 @@ export PYTHONPATH="$script_root:$PWD/source"
 export FH_REPO="$PWD/source"
 export FH_LEDGER="$FH_ROOT/raw/transport.jsonl"
 test -n "${FH_DIM_OAUTH_SESSION:-}"
+test "$FH_PROFILE" = short
+case "$FH_BUDGET_ARM" in
+  baseline|remaining) ;;
+  *) exit 2 ;;
+esac
+case "$FH_TASKS" in
+  code-from-image|merge-diff-arc-agi-task|adaptive-rejection-sampler|schemelike-metacircular-eval|sqlite-db-truncate|regex-log) ;;
+  *) exit 2 ;;
+esac
+node --input-type=module <<'CUTOFF'
+import { DEFAULT_WORKSPACE_EXEC_DEFAULT_CUTOFF_MS } from "./source/apps/cli/dist/product-slices/contracts.js";
+if (DEFAULT_WORKSPACE_EXEC_DEFAULT_CUTOFF_MS !== 120_000) throw new Error("Unexpected exec cutoff");
+CUTOFF
 node -e 'console.log("::add-mask::" + JSON.parse(process.env.FH_DIM_OAUTH_SESSION).access)'
 
 unset DEEPSEEK_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY BEST_AGENT_PROVIDER_API_KEY

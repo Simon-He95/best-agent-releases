@@ -12,7 +12,7 @@ mkdir -m 0755 "$FH_RESULT_EXPORT"
 test -n "${FH_DIM_OAUTH_SESSION:-}"
 test "$FH_PROFILE" = short
 case "$FH_EXPERIMENT" in
-  probe) test -z "$FH_TASKS" ;;
+  probe|density-probe) test -z "$FH_TASKS" ;;
   baseline|on-demand)
     case "$FH_TASKS" in
       vpp-loss-divergence|sqlite-db-truncate|regex-log) ;;
@@ -47,7 +47,7 @@ d=json.loads((Path(os.environ["FH_ROOT"])/"raw/preflight.json").read_text())
 assert d.get("choices") and d.get("usage"), "Missing authenticated model response or usage"
 CHECK
 printf 'Dim OAuth authenticated model preflight passed\n'
-if [ "$FH_EXPERIMENT" = probe ]; then
+if [[ "$FH_EXPERIMENT" = probe || "$FH_EXPERIMENT" = density-probe ]]; then
   node "$script_root/request-size-probe.mjs"
   exit 0
 fi

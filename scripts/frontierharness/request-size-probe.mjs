@@ -67,19 +67,25 @@ async function probe(name, stdout, filler = [], pad = 0) {
 
 const control = await probe("control", "OK");
 if (control.status !== 200 || !control.prompt_tokens) throw new Error("Tool-shaped control did not complete");
-await probe("wire", "OK", [], paddedBytes);
-await probe("tool", (" ".repeat(96) + "\n").repeat(13_000), [], paddedBytes);
+if (process.env.FH_EXPERIMENT === "probe") {
+  await probe("wire", "OK", [], paddedBytes);
+  await probe("tool", (" ".repeat(96) + "\n").repeat(13_000), [], paddedBytes);
+}
 
 const calibration = await probe("calibrate", "OK", [" x".repeat(4096)]);
 if (!calibration.prompt_tokens || calibration.prompt_tokens <= control.prompt_tokens) {
   throw new Error("Could not calibrate input tokens");
 }
 const tokensPerRepeat = (calibration.prompt_tokens - control.prompt_tokens) / 4096;
-for (const target of [900_000, 1_150_000]) {
+const densityProbe = process.env.FH_EXPERIMENT === "density-probe";
+for (const target of densityProbe ? [1_150_000] : [900_000, 1_150_000]) {
   const repeats = Math.floor((target - control.prompt_tokens) / tokensPerRepeat);
   const parts = [];
   for (let offset = 0; offset < repeats; offset += 50_000) {
     parts.push(" x".repeat(Math.min(50_000, repeats - offset)));
+  }
+  if (densityProbe) {
+    await probe("low-density", "OK", parts.map(part => "x".repeat(part.length)), paddedBytes);
   }
   await probe("context-" + target, "OK", parts, paddedBytes);
 }

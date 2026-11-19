@@ -24,6 +24,7 @@ on:
           - baseline
           - on-demand
           - probe
+          - density-probe
         default: baseline
       recipient_key:
         description: Public age key for encrypted diagnostics

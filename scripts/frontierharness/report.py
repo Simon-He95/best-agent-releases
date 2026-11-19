@@ -79,7 +79,10 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         if b"curl: (18)" in tail and b"uvx: command not found" in tail:
             outcome = "infra"
             exception = "VerifierBootstrapDownloadFailed"
+    timing_path = path.parent / "agent/artifact-timing.json"
+    timing = json.loads(timing_path.read_text()) if timing_path.is_file() else None
     rows.append({
+        "exec_cutoff_ms": 120_000, "artifact_timing": json.dumps(timing),
         "task": result["task_name"], "profile": profile["profile"], "outcome": outcome,
         "reward": reward, "exception": exception, "source_failure": source_failure,
         "terminal": terminal, "checksum": result["task_checksum"],

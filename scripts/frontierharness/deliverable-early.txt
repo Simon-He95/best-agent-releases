@@ -1,0 +1,1 @@
+Once you have a correct way to generate an explicitly requested artifact, produce it and verify it through its real entry point before spending more time on optional diagnostics.

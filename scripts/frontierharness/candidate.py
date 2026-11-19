@@ -1,8 +1,20 @@
 import json
 import os
+import shlex
 from pathlib import Path
 
 from benchmarks.frontierharness.agents.best_agent import BestAgent
+
+
+ARTIFACT_PATHS = {
+    "terminal-bench/adaptive-rejection-sampler": [
+        "/app/ars.R", "/app/normal_samples.txt", "/app/exponential_samples.txt",
+    ],
+    "terminal-bench/code-from-image": ["/app/output.txt"],
+    "terminal-bench/gcode-to-text": ["/app/out.txt"],
+    "terminal-bench/sqlite-db-truncate": ["/app/recover.json"],
+    "terminal-bench/regex-log": ["/app/regex.txt"],
+}
 
 
 class Candidate(BestAgent):
@@ -21,6 +33,31 @@ SH
 chmod 0755 /usr/local/bin/best-agent
 best-agent --version
 """)
+
+    async def run(self, instruction, environment, context):
+        trial = json.loads((self.logs_dir.parent / "config.json").read_text())
+        tasks = json.loads((Path(os.environ["FH_AB_DIR"]) / "tasks.json").read_text())
+        task = next(row for row in tasks if Path(row["path"]) == Path(trial["task"]["path"]))
+        self._artifact_paths = ARTIFACT_PATHS.get(task["name"], [])
+        if self._artifact_paths:
+            await environment.upload_file(
+                Path(__file__).with_name("observe-artifacts.mjs"),
+                "/tmp/fh-observe-artifacts.mjs",
+            )
+        await super().run(instruction, environment, context)
+
+    async def exec_as_agent(self, environment, command, **kwargs):
+        entry = 'best-agent run --workspace "$workspace"'
+        if getattr(self, "_artifact_paths", []) and entry in command:
+            paths = " ".join(shlex.quote(path) for path in self._artifact_paths)
+            audit = "/logs/agent/artifact-timing.json"
+            observer = (
+                f'/opt/best-agent/bin/node /tmp/fh-observe-artifacts.mjs "$$" {audit} {paths} '
+                '</dev/null >/dev/null 2>/logs/agent/artifact-observer.stderr & observer=$!; '
+                f'while [ ! -s {audit} ]; do kill -0 "$observer"; sleep .02; done; '
+            )
+            command = command.replace(entry, observer + "exec " + entry, 1)
+        return await super().exec_as_agent(environment, command, **kwargs)
 
     async def _upload_provider_config(self, environment, provider, model_id):
         route = await self.exec_as_agent(environment, r"""/opt/best-agent/bin/node -e '

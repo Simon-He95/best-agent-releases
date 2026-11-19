@@ -167,10 +167,26 @@ jobs:
           path: output/${{ matrix.target }}.log.enc
           retention-days: 1
           if-no-files-found: ignore
+      - name: Locate the Windows MSVC linker
+        if: inputs.artifact == 'rust' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (!$env:VCToolsInstallDir) { throw 'Visual Studio tools were not activated.' }
+          $link = Get-Command link.exe -CommandType Application -All |
+            Where-Object { $_.Source.StartsWith($env:VCToolsInstallDir, [StringComparison]::OrdinalIgnoreCase) } |
+            Select-Object -First 1
+          if (!$link) { throw 'MSVC link.exe is missing from the developer environment.' }
+          "RUST_MSVC_BIN=$([IO.Path]::GetDirectoryName($link.Source))" >> $env:GITHUB_ENV
       - name: Verify the installed Rust archive
         if: inputs.artifact == 'rust'
         shell: bash
-        run: node source/scripts/public-distribution/build.mjs rust-verify ${{ matrix.target }}
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            msvc_bin=$(cygpath -u "$RUST_MSVC_BIN")
+            export PATH="$msvc_bin:$PATH"
+            test "$(type -P link.exe)" = "$msvc_bin/link.exe"
+          fi
+          node source/scripts/public-distribution/build.mjs rust-verify ${{ matrix.target }}
         env:
           BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
           GH_TOKEN: ${{ github.token }}

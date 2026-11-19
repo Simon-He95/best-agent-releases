@@ -173,6 +173,8 @@ jobs:
         run: node source/scripts/public-distribution/build.mjs rust-verify ${{ matrix.target }}
         env:
           BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          RUST_CLASSIC_SSH_KEY: ${{ secrets.RUST_CLASSIC_SSH_KEY }}
           RUSTUP_TOOLCHAIN: 1.98.1-${{ matrix.rust_host }}
       - name: Preserve encrypted Rust verification evidence
         if: always() && inputs.artifact == 'rust'

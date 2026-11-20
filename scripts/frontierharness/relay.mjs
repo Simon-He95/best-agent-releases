@@ -72,16 +72,34 @@ const server = createServer(async (request, response) => {
     const system=first?(payload.messages??[]).filter(m=>m.role==="system").map(m=>m.content):[];
     const msg=payload.messages??[];
     const diag=new Set();
+    const execIds=new Set();
     for(const m of msg){
       for(const call of m.tool_calls??[]){
+        if(call.function?.name==="exec")execIds.add(call.id);
         if(/best-agent-evidence\.jsonl|\/logs\/agent/.test(String(call.function?.arguments)))diag.add(call.id);
       }
     }
+    const uncertainExecReceipts=[];
+    const suffixStart=msg.findLastIndex(m=>m.role!=="tool")+1;
+    for(const entry of msg.slice(suffixStart)){
+      if(!execIds.has(entry.tool_call_id)||typeof entry.content!=="string")continue;
+      let closure;
+      try{closure=JSON.parse(entry.content);}catch{continue;}
+      const observation=closure?.observation;
+      if(closure?.kind!=="unknown"||closure.reason!=="uncertain"||typeof observation!=="string")continue;
+      uncertainExecReceipts.push({
+        callId:entry.tool_call_id,
+        observationDigest:digest(observation),
+        nonempty:!observation.endsWith("stderr: ; stdout:"),
+        hasEscapedLine:/(?:^|[^\\])(?:\\\\)*\\[rn]/u.test(observation),
+      });
+    }
     const diagReplies=msg.filter(m=>m.role==="tool"&&diag.has(m.tool_call_id));
     log({tag,id,phase:"request",bytes:body.length,model:payload.model,
+      uncertainExecReceipts,
       self_diagnostic_call_ids:[...diag],
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
-      ...(first?{tool_count:payload.tools?.length,tool_digest:digest(payload.tools ?? []),system_count:system.length,
+      ...(first?{tool_count:payload.tools?.length,tool_digest:digest(payload.tools ?? []),system_count:system.length,reasoning_effort:payload.reasoning_effort,
          baseline_first_instruction:digest(system[0] ?? null),deadline:system.some(x=>String(x).includes("Run deadline (UTC)"))}:{})});
     const credential = { access: session.access };
     const upstream = await new Promise((resolve, reject) => {

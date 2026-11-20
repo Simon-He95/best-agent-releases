@@ -28,6 +28,11 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     result = json.loads(path.read_text())
     entries = ledger[path.parent.name]
     requests = [v for v in entries if v["phase"] == "request"]
+    exec_observations = {
+        item["callId"]: item
+        for request in requests
+        for item in request.get("uncertainExecReceipts", [])
+    }
     receipts = [v["usage"] for v in entries if v["phase"] == "finish" and v.get("usage")]
     if requests:
         first = requests[0]
@@ -95,6 +100,10 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "model_requests": len(requests), "requests_with_usage": len(receipts),
         "tool_digest": requests[0].get("tool_digest") if requests else None,
         "system_count": requests[0].get("system_count") if requests else None,
+        "reasoning_effort": requests[0].get("reasoning_effort") if requests else None,
+        "wire_exec_uncertain_observations": len(exec_observations),
+        "wire_exec_uncertain_nonempty": sum(item["nonempty"] for item in exec_observations.values()),
+        "wire_exec_uncertain_escaped_line": sum(item["hasEscapedLine"] for item in exec_observations.values()),
         "checks_passed": checks.get("passed"), "checks_total": checks.get("tests"),
     })
 if not rows:

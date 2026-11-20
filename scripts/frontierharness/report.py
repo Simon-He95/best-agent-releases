@@ -37,6 +37,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     root_id = None
     source_failure = None
     terminal = None
+    exec_closures = None
     trace = path.parent / "agent/best-agent-evidence.jsonl"
     if trace.exists():
         for line in trace.open("rb"):
@@ -52,6 +53,11 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
                 source_failure = event["sourceReason"]
             elif event.get("runId") == root_id and event["type"] == "terminal-snapshot":
                 terminal = event["snapshot"]["status"]
+                exec_closures = [
+                    entry["result"]["closure"]
+                    for entry in event["snapshot"]["transcript"]
+                    if entry["kind"] == "tool" and entry["result"]["name"] == "exec"
+                ]
     exception = (result.get("exception_info") or {}).get("exception_type")
     reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
     statuses = [v["status"] for v in entries if v["phase"] == "headers"]
@@ -95,6 +101,18 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "model_requests": len(requests), "requests_with_usage": len(receipts),
         "tool_digest": requests[0].get("tool_digest") if requests else None,
         "system_count": requests[0].get("system_count") if requests else None,
+        "wire_tool_digest": requests[0].get("wire_tool_digest") if requests else None,
+        "reasoning_effort": requests[0].get("reasoning_effort") if requests else None,
+        "exec_argv_root_applied": requests[0].get("exec_argv_root_applied") if requests else None,
+        "exec_argv_nested_catalog_count": requests[0].get("exec_argv_nested_catalog_count") if requests else None,
+        "exec_argv_root_catalog_count": requests[0].get("exec_argv_root_catalog_count") if requests else None,
+        "root_exec_results": len(exec_closures) if exec_closures is not None else None,
+        "root_exec_unknown_command": sum(
+            closure.get("reason") == "unknown-command" for closure in exec_closures
+        ) if exec_closures is not None else None,
+        "root_exec_malformed_input": sum(
+            closure.get("reason") == "malformed-input" for closure in exec_closures
+        ) if exec_closures is not None else None,
         "checks_passed": checks.get("passed"), "checks_total": checks.get("tests"),
     })
 if not rows:

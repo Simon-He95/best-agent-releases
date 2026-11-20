@@ -8,6 +8,7 @@ const repo = process.env.FH_REPO;
 const model = "deepseek-v4.1-flash";
 const marker = process.env.FH_OAUTH_REPRO_PROXY_KEY;
 const ledger = process.env.FH_LEDGER;
+const projectExecArgvAtRoot = process.env.FH_EXEC_ARGV_CATALOG_ROOT === "true";
 const log = value => appendFileSync(ledger, JSON.stringify(value)+"\n",{mode:0o600});
 let ordinal=0;
 const firstTags=new Set();
@@ -68,6 +69,16 @@ const server = createServer(async (request, response) => {
       return;
     }
     const first=!firstTags.has(tag);
+    const sourceToolDigest = first ? digest(payload.tools ?? []) : undefined;
+    const execSchema = payload.tools?.find(tool => tool.function?.name === "exec")?.function.parameters;
+    const argvBranch = execSchema?.anyOf?.find(branch => branch.required?.includes("argv"))?.properties?.argv;
+    const admittedCommandCount = argvBranch?.prefixItems?.[0]?.enum?.length ?? 0;
+    if (execSchema && (!admittedCommandCount || !execSchema.properties?.argv)) {
+      throw new Error("Expected the selected catalog exec schema");
+    }
+    const applied = projectExecArgvAtRoot && execSchema !== undefined;
+    if (applied) execSchema.properties.argv = argvBranch;
+    const outboundBody = applied ? Buffer.from(JSON.stringify(payload)) : body;
     if(first) firstTags.add(tag);
     const system=first?(payload.messages??[]).filter(m=>m.role==="system").map(m=>m.content):[];
     const msg=payload.messages??[];
@@ -78,10 +89,13 @@ const server = createServer(async (request, response) => {
       }
     }
     const diagReplies=msg.filter(m=>m.role==="tool"&&diag.has(m.tool_call_id));
-    log({tag,id,phase:"request",bytes:body.length,model:payload.model,
+    log({tag,id,phase:"request",bytes:outboundBody.length,model:payload.model,
       self_diagnostic_call_ids:[...diag],
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
-      ...(first?{tool_count:payload.tools?.length,tool_digest:digest(payload.tools ?? []),system_count:system.length,
+      ...(first?{tool_count:payload.tools?.length,tool_digest:sourceToolDigest,wire_tool_digest:digest(payload.tools ?? []),system_count:system.length,
+         reasoning_effort:payload.reasoning_effort,exec_argv_root_applied:applied,
+         exec_argv_nested_catalog_count:admittedCommandCount,
+         exec_argv_root_catalog_count:execSchema?.properties?.argv?.prefixItems?.[0]?.enum?.length ?? 0,
          baseline_first_instruction:digest(system[0] ?? null),deadline:system.some(x=>String(x).includes("Run deadline (UTC)"))}:{})});
     const credential = { access: session.access };
     const upstream = await new Promise((resolve, reject) => {
@@ -89,13 +103,13 @@ const server = createServer(async (request, response) => {
         method: "POST",
         headers: Object.fromEntries(projectDimOAuthTransportHeaders({
           "Content-Type": "application/json",
-          "Content-Length": String(body.length),
+          "Content-Length": String(outboundBody.length),
           Authorization: "Bearer " + credential.access,
         })),
         signal: abort.signal,
       }, resolve);
       outbound.on("error", reject);
-      outbound.end(body);
+      outbound.end(outboundBody);
     });
     status=upstream.statusCode;
     log({tag,id,phase:"headers",status});

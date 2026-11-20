@@ -16,6 +16,10 @@ on:
           - claude
           - codex
         default: short
+      exec_argv_catalog_root:
+        description: Reuse the admitted exec argv schema at the tool root
+        type: boolean
+        default: false
       recipient_key:
         description: Public age key for encrypted diagnostics
         required: true
@@ -81,6 +85,7 @@ jobs:
           FH_DIM_OAUTH_SESSION: ${{ secrets.FH_DIM_OAUTH_SESSION }}
           FH_PROFILE: ${{ inputs.profile }}
           FH_TASKS: ${{ inputs.tasks }}
+          FH_EXEC_ARGV_CATALOG_ROOT: ${{ inputs.exec_argv_catalog_root }}
         run: bash scripts/frontierharness/run.sh
       - name: Encrypt raw diagnostics
         if: always()

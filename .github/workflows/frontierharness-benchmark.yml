@@ -1,4 +1,4 @@
-name: FrontierHarness paired benchmark
+name: FrontierHarness headless compact pilot
 run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:
@@ -13,7 +13,7 @@ on:
         required: true
         type: string
       tasks:
-        description: Comma-separated subset of the 57-task comparison cohort
+        description: Comma-separated subset of the compact pilot cohort
         required: false
         type: string
         default: ""
@@ -51,7 +51,7 @@ jobs:
     needs: plan
     strategy:
       fail-fast: false
-      max-parallel: 6
+      max-parallel: 4
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 350
@@ -80,7 +80,7 @@ jobs:
       - name: Build the pinned profile
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
-          FH_PROFILE: ${{ matrix.profile }}
+          FH_PROFILE: claude
         run: |
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
           export FH_ROOT="$RUNNER_TEMP/frontier"
@@ -92,8 +92,9 @@ jobs:
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
           FH_DIM_OAUTH_SESSION: ${{ secrets.FH_DIM_OAUTH_SESSION }}
-          FH_PROFILE: ${{ matrix.profile }}
+          FH_PROFILE: claude
           FH_TASKS: ${{ matrix.task }}
+          FH_COMPACT_ARM: ${{ matrix.profile }}
         run: bash scripts/frontierharness/run.sh
       - name: Preserve the task score
         if: always()

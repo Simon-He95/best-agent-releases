@@ -81,7 +81,7 @@ const server = createServer(async (request, response) => {
     log({tag,id,phase:"request",bytes:body.length,model:payload.model,
       self_diagnostic_call_ids:[...diag],
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
-      ...(first?{tool_count:payload.tools?.length,tool_digest:digest(payload.tools ?? []),system_count:system.length,
+      ...(first?{tool_count:payload.tools?.length,tool_digest:digest(payload.tools ?? []),system_count:system.length,reasoning_effort:payload.reasoning_effort,
          baseline_first_instruction:digest(system[0] ?? null),deadline:system.some(x=>String(x).includes("Run deadline (UTC)"))}:{})});
     const credential = { access: session.access };
     const upstream = await new Promise((resolve, reject) => {

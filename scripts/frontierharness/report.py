@@ -33,6 +33,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         first = requests[0]
         assert first["model"] == "deepseek-v4.1-flash"
         assert first["tool_count"] == 31 and first["deadline"] is False
+        assert first["reasoning_effort"] == "max"
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
     root_id = None
     source_failure = None
@@ -54,15 +55,18 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
                 terminal = event["snapshot"]["status"]
     exception = (result.get("exception_info") or {}).get("exception_type")
     reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
-    statuses = [v["status"] for v in entries if v["phase"] == "headers"]
+    statuses = {v["id"]: v["status"] for v in entries if v["phase"] == "headers"}
+    last_status = statuses.get(requests[-1]["id"]) if requests else None
     if exception == "AgentTimeoutError":
         outcome = "timeout"
+    elif exception and source_failure and last_status in (400, 413):
+        outcome = "request_rejected"
     elif source_failure in ("connection", "transport"):
         outcome = "infra"
     elif reward == 1 and not exception:
         outcome = "pass"
     elif exception == "VerifierTimeoutError" or (
-        exception and any(s in (401, 402, 403, 429, 500, 502, 503, 504) for s in statuses)
+        exception and any(s in (401, 402, 403, 429, 500, 502, 503, 504) for s in statuses.values())
     ):
         outcome = "infra"
     elif reward is not None:
@@ -110,7 +114,7 @@ summary = {
     "planned": planned, "completed": len(rows),
     **{
         label: sum(r["outcome"] == label for r in rows)
-        for label in ("pass", "fail", "timeout", "infra")
+        for label in ("pass", "fail", "timeout", "request_rejected", "infra")
     },
     **{
         label: sum(r[label] for r in rows)

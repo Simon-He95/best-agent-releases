@@ -1,4 +1,5 @@
-name: FrontierHarness benchmark
+name: FrontierHarness paired benchmark
+run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:
   workflow_dispatch:
@@ -7,15 +8,6 @@ on:
         description: Exact private source commit
         required: true
         type: string
-      profile:
-        description: Behavior instruction profile
-        required: true
-        type: choice
-        options:
-          - short
-          - claude
-          - codex
-        default: short
       recipient_key:
         description: Public age key for encrypted diagnostics
         required: true
@@ -35,11 +27,32 @@ permissions:
   contents: read
 
 concurrency:
-  group: frontierharness-${{ inputs.source_sha }}-${{ inputs.profile }}-${{ inputs.label }}
+  group: frontierharness-paired-${{ inputs.source_sha }}-${{ inputs.label }}
   cancel-in-progress: false
 
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - id: plan
+        name: Plan the task pairs
+        env:
+          FH_TASKS: ${{ inputs.tasks }}
+        run: python3 scripts/frontierharness/plan-pairs.py
+
   benchmark:
+    name: ${{ matrix.profile }} / ${{ matrix.task }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     steps:
@@ -67,7 +80,7 @@ jobs:
       - name: Build the pinned profile
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
-          FH_PROFILE: ${{ inputs.profile }}
+          FH_PROFILE: ${{ matrix.profile }}
         run: |
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
           export FH_ROOT="$RUNNER_TEMP/frontier"
@@ -79,9 +92,20 @@ jobs:
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
           FH_DIM_OAUTH_SESSION: ${{ secrets.FH_DIM_OAUTH_SESSION }}
-          FH_PROFILE: ${{ inputs.profile }}
-          FH_TASKS: ${{ inputs.tasks }}
+          FH_PROFILE: ${{ matrix.profile }}
+          FH_TASKS: ${{ matrix.task }}
         run: bash scripts/frontierharness/run.sh
+      - name: Preserve the task score
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: score-${{ matrix.profile }}-${{ matrix.task }}
+          path: |
+            ${{ runner.temp }}/frontier/report/profile.json
+            ${{ runner.temp }}/frontier/report/summary.json
+            ${{ runner.temp }}/frontier/report/tasks.csv
+          retention-days: 14
+          if-no-files-found: warn
       - name: Encrypt raw diagnostics
         if: always()
         env:
@@ -92,7 +116,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: frontierharness-v11-${{ inputs.profile }}-${{ inputs.label }}
-          path: ${{ runner.temp }}/frontier/report/
-          retention-days: 7
+          name: diagnostics-${{ matrix.profile }}-${{ matrix.task }}
+          path: ${{ runner.temp }}/frontier/report/diagnostics.tar.gz.age
+          retention-days: 14
           if-no-files-found: error

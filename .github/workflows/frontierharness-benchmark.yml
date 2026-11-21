@@ -1,4 +1,4 @@
-name: FrontierHarness same-runner early reasoning pilot
+name: FrontierHarness declared input window recovery pilot
 run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:
@@ -13,7 +13,7 @@ on:
         required: true
         type: string
       tasks:
-        description: Comma-separated subset of the early reasoning pilot
+        description: Comma-separated subset of the declared window recovery pilot
         required: false
         type: string
         default: ""

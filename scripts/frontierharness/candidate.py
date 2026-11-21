@@ -7,6 +7,9 @@ from benchmarks.frontierharness.agents.best_agent import BestAgent
 
 class Candidate(BestAgent):
     async def install(self, environment):
+        compact = ' --compact-dir "$BEST_AGENT_STORAGE_ROOT/compact"' if (
+            os.environ["FH_PROFILE"] == "short-window-recovery"
+        ) else ""
         await self.exec_as_root(environment, r"""set -eu
 cat > /usr/local/bin/best-agent <<'SH'
 #!/bin/sh
@@ -14,7 +17,7 @@ PATH="/opt/best-agent/bin:$PATH"
 export PATH
 if [ "$1" = run ]; then
   shift
-  exec /opt/best-agent/bin/best-agent run --process-close-policy release "$@"
+  exec /opt/best-agent/bin/best-agent run --process-close-policy release""" + compact + r""" "$@"
 fi
 exec /opt/best-agent/bin/best-agent "$@"
 SH

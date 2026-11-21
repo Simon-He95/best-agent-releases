@@ -7,6 +7,8 @@ from pathlib import Path
 
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
+arm = profile["profile"]
+assert arm in ("short", "short-window-recovery")
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -28,10 +30,6 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     result = json.loads(path.read_text())
     entries = ledger[path.parent.name]
     requests = [v for v in entries if v["phase"] == "request"]
-    root_requests = [v for v in requests if v.get("root_request")]
-    high = [v for v in root_requests if v["forwarded_effort"] == "high"]
-    early = [v for v in root_requests if v["before_file_operation"]]
-    late = [v for v in root_requests if not v["before_file_operation"]]
     receipts = [v["usage"] for v in entries if v["phase"] == "finish" and v.get("usage")]
     if requests:
         first = requests[0]
@@ -39,12 +37,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         assert first["tool_count"] == 31 and first["deadline"] is False
         assert first["reasoning_effort"] == "max"
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
-        assert root_requests and root_requests[0] is first
-        candidate = profile["profile"] == "short-early-high"
-        assert len(high) == (len(early) if candidate else 0)
-        assert all(v["forwarded_effort"] == "max" for v in late)
-    root_id = None
-    source_failure = None
+    failures_by_run = {}
+    terminal_runs = []
     terminal = None
     trace = path.parent / "agent/best-agent-evidence.jsonl"
     if trace.exists():
@@ -55,12 +49,14 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
             )):
                 continue
             event = json.loads(line)
-            if event["type"] == "header":
-                root_id = event["rootRunId"]
-            elif event.get("runId") == root_id and event["type"] == "model-failure-diagnostic":
-                source_failure = event["sourceReason"]
-            elif event.get("runId") == root_id and event["type"] == "terminal-snapshot":
+            if event.get("runId") is None or event.get("resourceId") != event["runId"]:
+                continue
+            if event["type"] == "model-failure-diagnostic":
+                failures_by_run[event["runId"]] = event["sourceReason"]
+            elif event["type"] == "terminal-snapshot":
                 terminal = event["snapshot"]["status"]
+                terminal_runs.append((event["runId"], terminal))
+    source_failure = failures_by_run.get(terminal_runs[-1][0]) if terminal_runs else None
     exception = (result.get("exception_info") or {}).get("exception_type")
     reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
     statuses = {v["id"]: v["status"] for v in entries if v["phase"] == "headers"}
@@ -93,6 +89,17 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
             exception = "VerifierBootstrapDownloadFailed"
     rows.append({
         "task": result["task_name"], "profile": profile["profile"], "outcome": outcome,
+        "arm": arm,
+        "root_terminals": "|".join(terminal for _, terminal in terminal_runs),
+        "compact_context_requests": sum(bool(v.get("compact_context")) for v in requests),
+        "local_input_walls": sum(reason == "input-over-window" for reason in failures_by_run.values()),
+        "compact_requests_with_original_tools": sum(
+            bool(v.get("compact_context")) and v.get("request_tool_count") == 31
+            and v.get("request_tool_digest") == requests[0]["tool_digest"]
+            for v in requests
+        ) if requests else 0,
+        "compact_tools_called": len({call for v in requests for call in v.get("compact_call_ids", [])}),
+        "last_upstream_status": last_status,
         "reward": reward, "exception": exception, "source_failure": source_failure,
         "terminal": terminal, "checksum": result["task_checksum"],
         "agent_seconds": seconds(result.get("agent_execution")),
@@ -106,11 +113,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "output_tokens": sum(v.get("completion_tokens", 0) for v in receipts),
         "model_requests": len(requests), "requests_with_usage": len(receipts),
         "tool_digest": requests[0].get("tool_digest") if requests else None,
+        "core_tool_digest": requests[0].get("core_tool_digest") if requests else None,
         "system_count": requests[0].get("system_count") if requests else None,
-        "root_requests": len(root_requests),
-        "early_requests": len(early),
-        "forwarded_high": len(high),
-        "post_file_requests": len(late),
         "checks_passed": checks.get("passed"), "checks_total": checks.get("tests"),
     })
 if not rows:
@@ -121,7 +125,7 @@ with (root / "report/tasks.csv").open("w", newline="") as f:
     writer.writerows(rows)
 planned = len(json.loads((root / "raw/tasks.json").read_text()))
 summary = {
-    **profile, "dataset": "frontier-harness-eval@v1.1.0",
+    **profile, "arm": arm, "dataset": "frontier-harness-eval@v1.1.0",
     "provider": "Dim OAuth", "model": "deepseek-v4.1-flash",
     "planned": planned, "completed": len(rows),
     **{

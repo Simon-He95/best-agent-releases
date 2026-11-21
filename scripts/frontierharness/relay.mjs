@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { request as requestHttps } from "node:https";
 import { pathToFileURL } from "node:url";
+import { createEarlyEffortPolicy } from "./early-effort.mjs";
 
 const repo = process.env.FH_REPO;
 const model = "deepseek-v4.1-flash";
@@ -12,6 +13,7 @@ const log = value => appendFileSync(ledger, JSON.stringify(value)+"\n",{mode:0o6
 let ordinal=0;
 const firstTags=new Set();
 const digest=x=>createHash("sha256").update(JSON.stringify(x)).digest("hex");
+const selectEffort = createEarlyEffortPolicy(process.env.FH_PROFILE, digest);
 if (!repo || !marker) throw new Error("Set FH_REPO and FH_OAUTH_REPRO_PROXY_KEY.");
 const fromRepo = (path) => import(pathToFileURL(repo + "/" + path).href);
 const { projectDimOAuthTransportHeaders } = await fromRepo("packages/model-binding-ai-sdk/dist/index.js");
@@ -78,7 +80,12 @@ const server = createServer(async (request, response) => {
       }
     }
     const diagReplies=msg.filter(m=>m.role==="tool"&&diag.has(m.tool_call_id));
-    log({tag,id,phase:"request",bytes:body.length,model:payload.model,
+    const selected = selectEffort(tag, payload);
+    const forwarded = selected.effort === payload.reasoning_effort
+      ? body
+      : Buffer.from(JSON.stringify({...payload,reasoning_effort:selected.effort}));
+    log({tag,id,phase:"request",bytes:forwarded.length,model:payload.model,
+      root_request:selected.root, before_file_operation:selected.early, forwarded_effort:selected.effort,
       self_diagnostic_call_ids:[...diag],
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
       ...(first?{tool_count:payload.tools?.length,tool_digest:digest(payload.tools ?? []),system_count:system.length,reasoning_effort:payload.reasoning_effort,
@@ -89,13 +96,13 @@ const server = createServer(async (request, response) => {
         method: "POST",
         headers: Object.fromEntries(projectDimOAuthTransportHeaders({
           "Content-Type": "application/json",
-          "Content-Length": String(body.length),
+          "Content-Length": String(forwarded.length),
           Authorization: "Bearer " + credential.access,
         })),
         signal: abort.signal,
       }, resolve);
       outbound.on("error", reject);
-      outbound.end(body);
+      outbound.end(forwarded);
     });
     status=upstream.statusCode;
     log({tag,id,phase:"headers",status});

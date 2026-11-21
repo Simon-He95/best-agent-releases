@@ -28,6 +28,10 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     result = json.loads(path.read_text())
     entries = ledger[path.parent.name]
     requests = [v for v in entries if v["phase"] == "request"]
+    root_requests = [v for v in requests if v.get("root_request")]
+    high = [v for v in root_requests if v["forwarded_effort"] == "high"]
+    early = [v for v in root_requests if v["before_file_operation"]]
+    late = [v for v in root_requests if not v["before_file_operation"]]
     receipts = [v["usage"] for v in entries if v["phase"] == "finish" and v.get("usage")]
     if requests:
         first = requests[0]
@@ -35,6 +39,10 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         assert first["tool_count"] == 31 and first["deadline"] is False
         assert first["reasoning_effort"] == "max"
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
+        assert root_requests and root_requests[0] is first
+        candidate = profile["profile"] == "short-early-high"
+        assert len(high) == (len(early) if candidate else 0)
+        assert all(v["forwarded_effort"] == "max" for v in late)
     root_id = None
     source_failure = None
     terminal = None
@@ -99,6 +107,10 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "model_requests": len(requests), "requests_with_usage": len(receipts),
         "tool_digest": requests[0].get("tool_digest") if requests else None,
         "system_count": requests[0].get("system_count") if requests else None,
+        "root_requests": len(root_requests),
+        "early_requests": len(early),
+        "forwarded_high": len(high),
+        "post_file_requests": len(late),
         "checks_passed": checks.get("passed"), "checks_total": checks.get("tests"),
     })
 if not rows:

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 umask 077
-export FH_ROOT="$RUNNER_TEMP/frontier"
+export FH_ROOT="${FH_ROOT:-$RUNNER_TEMP/frontier}"
 export FH_AB_DIR="$FH_ROOT/raw"
 script_root=$(cd "$(dirname "$0")" && pwd)
 export PYTHONPATH="$script_root:$PWD/source"
@@ -35,7 +35,7 @@ assert d.get("choices") and d.get("usage"), "Missing authenticated model respons
 CHECK
 printf 'Dim OAuth authenticated model preflight passed\n'
 "$FH_ROOT/venv/bin/python" "$script_root/prepare-tasks.py" >"$FH_ROOT/raw/prepare-tasks.log" 2>&1
-mounts=$(python3 -c 'import json,sys;print(json.dumps([dict(type="bind",source=sys.argv[1],target="/opt/best-agent",read_only=True)]))' "$FH_ROOT/runtime")
+mounts=$(python3 -c 'import json,os,sys;print(json.dumps([dict(type="bind",source=os.path.realpath(sys.argv[1]),target="/opt/best-agent",read_only=True)]))' "$FH_ROOT/runtime")
 result=0
 "$FH_ROOT/venv/bin/harbor" run -c "$FH_ROOT/raw/job-config.json" -e docker -k 1 -n 1 -y \
   --agent-import-path candidate:Candidate --model openai/deepseek-v4.1-flash \

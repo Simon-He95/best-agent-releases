@@ -1,4 +1,4 @@
-name: FrontierHarness prerequisite verification pilot
+name: FrontierHarness same-runner early reasoning pilot
 run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:
@@ -13,7 +13,7 @@ on:
         required: true
         type: string
       tasks:
-        description: Comma-separated subset of the prerequisite verification pilot
+        description: Comma-separated subset of the early reasoning pilot
         required: false
         type: string
         default: ""
@@ -47,7 +47,7 @@ jobs:
         run: python3 scripts/frontierharness/plan-pairs.py
 
   benchmark:
-    name: ${{ matrix.profile }} / ${{ matrix.task }}
+    name: pair / ${{ matrix.task }}
     needs: plan
     strategy:
       fail-fast: false
@@ -77,46 +77,103 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/frontier/venv"
           "$RUNNER_TEMP/frontier/venv/bin/pip" install 'harbor==0.14.0'
           corepack enable
-      - name: Build the pinned profile
+      - id: build
+        name: Build the pinned short bundle once
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
-          FH_PROFILE: ${{ matrix.profile }}
         run: |
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
           export FH_ROOT="$RUNNER_TEMP/frontier"
           bash scripts/frontierharness/build.sh >"$FH_ROOT/raw/build.log" 2>&1
-          node scripts/frontierharness/prepare-profile.mjs >"$FH_ROOT/raw/profile.log" 2>&1
           printf '%s\n' "$SOURCE_SHA"
-          uname -m
-      - name: Run Dim OAuth on FrontierHarness v1.1
+          uname -a
+      - name: Encrypt build diagnostics
+        if: failure() && steps.build.outcome == 'failure'
+        env:
+          RECIPIENT_KEY: ${{ inputs.recipient_key }}
+        run: age --encrypt --recipient "$RECIPIENT_KEY" -o "$RUNNER_TEMP/frontier/build.log.age" "$RUNNER_TEMP/frontier/raw/build.log"
+      - name: Preserve encrypted build diagnostics
+        if: failure() && steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: build-diagnostics-${{ matrix.task }}
+          path: ${{ runner.temp }}/frontier/build.log.age
+          retention-days: 14
+      - name: Run Dim OAuth (${{ matrix.first }})
+        if: always() && steps.build.outcome == 'success'
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
           FH_DIM_OAUTH_SESSION: ${{ secrets.FH_DIM_OAUTH_SESSION }}
-          FH_PROFILE: ${{ matrix.profile }}
+          FH_PROFILE: ${{ matrix.first }}
           FH_TASKS: ${{ matrix.task }}
-        run: bash scripts/frontierharness/run.sh
-      - name: Preserve the task score
-        if: always()
+          FH_ROOT: ${{ runner.temp }}/frontier-${{ matrix.first }}
+        run: |
+          mkdir -p "$FH_ROOT/raw" "$FH_ROOT/report"
+          ln -s "$RUNNER_TEMP/frontier/runtime" "$FH_ROOT/runtime"
+          ln -s "$RUNNER_TEMP/frontier/venv" "$FH_ROOT/venv"
+          node scripts/frontierharness/prepare-profile.mjs >"$FH_ROOT/raw/profile.log" 2>&1
+          bash scripts/frontierharness/run.sh
+      - name: Preserve the task score (${{ matrix.first }})
+        if: always() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: score-${{ matrix.profile }}-${{ matrix.task }}
+          name: score-${{ matrix.first }}-${{ matrix.task }}
           path: |
-            ${{ runner.temp }}/frontier/report/profile.json
-            ${{ runner.temp }}/frontier/report/summary.json
-            ${{ runner.temp }}/frontier/report/tasks.csv
+            ${{ runner.temp }}/frontier-${{ matrix.first }}/report/profile.json
+            ${{ runner.temp }}/frontier-${{ matrix.first }}/report/summary.json
+            ${{ runner.temp }}/frontier-${{ matrix.first }}/report/tasks.csv
           retention-days: 14
           if-no-files-found: warn
-      - name: Encrypt raw diagnostics
-        if: always()
+      - name: Encrypt raw diagnostics (${{ matrix.first }})
+        if: always() && steps.build.outcome == 'success'
         env:
           RECIPIENT_KEY: ${{ inputs.recipient_key }}
-        run: |
-          test -d "$RUNNER_TEMP/frontier/raw"
-          tar -C "$RUNNER_TEMP/frontier" -czf - raw | age --encrypt --recipient "$RECIPIENT_KEY" -o "$RUNNER_TEMP/frontier/report/diagnostics.tar.gz.age"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
+          FH_ROOT: ${{ runner.temp }}/frontier-${{ matrix.first }}
+        run: tar -C "$FH_ROOT" -czf - raw | age --encrypt --recipient "$RECIPIENT_KEY" -o "$FH_ROOT/report/diagnostics.tar.gz.age"
+      - name: Preserve encrypted diagnostics (${{ matrix.first }})
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: diagnostics-${{ matrix.profile }}-${{ matrix.task }}
-          path: ${{ runner.temp }}/frontier/report/diagnostics.tar.gz.age
+          name: diagnostics-${{ matrix.first }}-${{ matrix.task }}
+          path: ${{ runner.temp }}/frontier-${{ matrix.first }}/report/diagnostics.tar.gz.age
+          retention-days: 14
+          if-no-files-found: error
+      - name: Run Dim OAuth (${{ matrix.second }})
+        if: always() && steps.build.outcome == 'success'
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          FH_DIM_OAUTH_SESSION: ${{ secrets.FH_DIM_OAUTH_SESSION }}
+          FH_PROFILE: ${{ matrix.second }}
+          FH_TASKS: ${{ matrix.task }}
+          FH_ROOT: ${{ runner.temp }}/frontier-${{ matrix.second }}
+        run: |
+          mkdir -p "$FH_ROOT/raw" "$FH_ROOT/report"
+          ln -s "$RUNNER_TEMP/frontier/runtime" "$FH_ROOT/runtime"
+          ln -s "$RUNNER_TEMP/frontier/venv" "$FH_ROOT/venv"
+          node scripts/frontierharness/prepare-profile.mjs >"$FH_ROOT/raw/profile.log" 2>&1
+          bash scripts/frontierharness/run.sh
+      - name: Preserve the task score (${{ matrix.second }})
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: score-${{ matrix.second }}-${{ matrix.task }}
+          path: |
+            ${{ runner.temp }}/frontier-${{ matrix.second }}/report/profile.json
+            ${{ runner.temp }}/frontier-${{ matrix.second }}/report/summary.json
+            ${{ runner.temp }}/frontier-${{ matrix.second }}/report/tasks.csv
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Encrypt raw diagnostics (${{ matrix.second }})
+        if: always() && steps.build.outcome == 'success'
+        env:
+          RECIPIENT_KEY: ${{ inputs.recipient_key }}
+          FH_ROOT: ${{ runner.temp }}/frontier-${{ matrix.second }}
+        run: tar -C "$FH_ROOT" -czf - raw | age --encrypt --recipient "$RECIPIENT_KEY" -o "$FH_ROOT/report/diagnostics.tar.gz.age"
+      - name: Preserve encrypted diagnostics (${{ matrix.second }})
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostics-${{ matrix.second }}-${{ matrix.task }}
+          path: ${{ runner.temp }}/frontier-${{ matrix.second }}/report/diagnostics.tar.gz.age
           retention-days: 14
           if-no-files-found: error

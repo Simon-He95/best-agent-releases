@@ -2,16 +2,15 @@ import json
 import os
 from pathlib import Path
 
-cohort = {"batched-eval-parity", "pytorch-model-cli", "log-summary-date-ranges"}
+cohort = set(Path(__file__).with_name("cohort57.txt").read_text().splitlines())
 selected = [entry.strip() for entry in os.environ.get("FH_TASKS", "").split(",") if entry.strip()]
 if not selected or len(selected) != len(set(selected)) or not set(selected) <= cohort:
-    raise SystemExit("Select unique tasks from the headless read-only audit pilot")
+    raise SystemExit("Select unique tasks from the pinned 57-task benchmark cohort")
 matrix = []
-for task in selected:
+reverse_order = os.environ.get("FH_REVERSE_ORDER") == "true"
+for index, task in enumerate(selected):
     profiles = ["short", "short-readonly-audit"]
-    if task in {"batched-eval-parity", "log-summary-date-ranges"}:
-        profiles.reverse()
-    if os.environ.get("FH_REVERSE_ORDER") == "true":
+    if (index % 2 == 1) != reverse_order:
         profiles.reverse()
     matrix.append({"task": task, "first": profiles[0], "second": profiles[1]})
 with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:

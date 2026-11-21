@@ -1,4 +1,4 @@
-name: FrontierHarness headless read-only audit pilot
+name: FrontierHarness headless read-only audit comparison
 run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:
@@ -13,10 +13,9 @@ on:
         required: true
         type: string
       tasks:
-        description: Comma-separated subset of the headless read-only audit pilot
-        required: false
+        description: Comma-separated task names from the pinned 57-task cohort
+        required: true
         type: string
-        default: ""
       reverse_order:
         description: Reverse each pair for confirmation
         required: false

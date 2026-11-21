@@ -3,6 +3,9 @@ set -euo pipefail
 mkdir -p "$FH_ROOT/packed" "$FH_ROOT/runtime/bin"
 cp "$(realpath "$(command -v node)")" "$FH_ROOT/runtime/bin/node"
 npm install --global --prefix "$FH_ROOT/runtime" --no-fund --no-audit npm@11.19.1 pnpm@10.34.9
+if [ "$FH_PROFILE" = short-private-evidence ]; then
+  python3 scripts/frontierharness/prepare-evidence.py
+fi
 cd source
 corepack install
 pnpm install --frozen-lockfile

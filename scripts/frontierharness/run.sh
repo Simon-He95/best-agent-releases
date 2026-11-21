@@ -23,6 +23,15 @@ for _ in {1..50}; do
   sleep .1
 done
 export FH_PORT=$(cat "$FH_ROOT/raw/port")
+if [ "$FH_PROFILE" = short-private-evidence ]; then
+  for _ in {1..50}; do
+    test ! -s "$FH_ROOT/raw/evidence-port" || break
+    kill -0 "$relay"
+    sleep .1
+  done
+  test -s "$FH_ROOT/raw/evidence-port"
+  export FH_EVIDENCE_PORT=$(cat "$FH_ROOT/raw/evidence-port")
+fi
 curl --fail --silent --show-error --max-time 90 --output "$FH_ROOT/raw/preflight.json" \
   "http://127.0.0.1:$FH_PORT/preflight/v1/chat/completions" \
   -H "Authorization: Bearer $FH_OAUTH_REPRO_PROXY_KEY" -H "Content-Type: application/json" \

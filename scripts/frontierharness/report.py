@@ -3,6 +3,7 @@ import json
 import os
 from collections import defaultdict
 from datetime import datetime
+from hashlib import sha256
 from pathlib import Path
 
 root = Path(os.environ["FH_ROOT"])
@@ -38,9 +39,27 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     root_id = None
     source_failure = None
     terminal = None
-    trace = path.parent / "agent/best-agent-evidence.jsonl"
+    mounted_trace = path.parent / "agent/best-agent-evidence.jsonl"
+    private = profile["profile"] == "short-private-evidence"
+    trace = (root / "raw/private-evidence" / path.parent.name / mounted_trace.name
+             if private else mounted_trace)
+    if private and requests:
+        assert not mounted_trace.exists(), "Evidence remained visible in the task log mount"
+        assert trace.is_file(), "Runner-side evidence is missing"
+    prefix = sha256()
+    evidence_status = None
     if trace.exists():
         for line in trace.open("rb"):
+            if private:
+                if not line.endswith(b"\n"):
+                    evidence_status = "partial"
+                    break
+                if b'"type":"footer"' in line[:100]:
+                    footer = json.loads(line)
+                    assert footer["prefixSha256"] == prefix.hexdigest(), "Evidence stream hash mismatch"
+                    evidence_status = "complete" if footer["complete"] else "sealed-incomplete"
+                else:
+                    prefix.update(line)
             if not any(marker in line[:130] for marker in (
                 b'"type":"header"', b'"type":"model-failure-diagnostic"',
                 b'"type":"terminal-snapshot"',
@@ -53,6 +72,10 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
                 source_failure = event["sourceReason"]
             elif event.get("runId") == root_id and event["type"] == "terminal-snapshot":
                 terminal = event["snapshot"]["status"]
+        if private:
+            assert root_id is not None, "Runner-side evidence has no trace header"
+            if evidence_status is None:
+                evidence_status = "partial"
     exception = (result.get("exception_info") or {}).get("exception_type")
     reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
     statuses = {v["id"]: v["status"] for v in entries if v["phase"] == "headers"}
@@ -99,6 +122,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "model_requests": len(requests), "requests_with_usage": len(receipts),
         "tool_digest": requests[0].get("tool_digest") if requests else None,
         "system_count": requests[0].get("system_count") if requests else None,
+        "evidence_status": evidence_status,
+        "evidence_bytes": trace.stat().st_size if trace.exists() else 0,
         "checks_passed": checks.get("passed"), "checks_total": checks.get("tests"),
     })
 if not rows:

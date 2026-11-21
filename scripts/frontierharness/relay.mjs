@@ -1,7 +1,9 @@
-import { appendFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
+import { mkdir, open } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { request as requestHttps } from "node:https";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const repo = process.env.FH_REPO;
@@ -22,6 +24,33 @@ if (!session.access || !session.baseUrl || !(session.expires > Date.now() + 7 * 
 const target = new URL(session.baseUrl.replace(/\/$/, "") + "/chat/completions");
 if (target.protocol !== "https:" || target.hostname === "api.deepseek.com") {
   throw new Error("Expected the HTTPS Dim OAuth endpoint");
+}
+
+async function preserveEvidence(request, response, tag) {
+  if (request.headers.authorization !== "Bearer " + marker) {
+    response.writeHead(403).end();
+    return;
+  }
+  const directory = join(process.env.FH_ROOT, "raw", "private-evidence", tag);
+  let file;
+  let size = 0;
+  try {
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    file = await open(join(directory, "best-agent-evidence.jsonl"), "wx", 0o600);
+    for await (const chunk of request) {
+      size += chunk.byteLength;
+      if (size > 1_073_741_824) throw new Error("Evidence stream exceeded the writer limit");
+      await file.writeFile(chunk);
+    }
+    await file.sync();
+    log({tag,phase:"evidence_stream",bytes:size,complete:true});
+    response.writeHead(204).end();
+  } catch {
+    log({tag,phase:"evidence_stream",bytes:size,complete:false});
+    if (!response.destroyed) response.writeHead(500).end();
+  } finally {
+    await file?.close();
+  }
 }
 
 const server = createServer(async (request, response) => {
@@ -132,3 +161,16 @@ const server = createServer(async (request, response) => {
   }
 });
 server.listen(0, "0.0.0.0", () => console.log(server.address().port));
+if (process.env.FH_PROFILE === "short-private-evidence") {
+  const evidence = createServer({ requestTimeout: 0 }, async (request, response) => {
+    const route = request.url?.match(/^\/([a-zA-Z0-9][a-zA-Z0-9_.-]*)\/attempt-evidence$/);
+    if (request.method !== "POST" || !route) {
+      response.writeHead(404).end();
+      return;
+    }
+    await preserveEvidence(request, response, route[1]);
+  });
+  evidence.listen(0, "0.0.0.0", () => {
+    writeFileSync(join(process.env.FH_ROOT, "raw", "evidence-port"), String(evidence.address().port));
+  });
+}

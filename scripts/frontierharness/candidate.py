@@ -16,8 +16,8 @@ class Candidate(BestAgent):
             raise
 
     async def install(self, environment):
-        tools_env = "env BEST_AGENT_FH_OMIT_THREAD_TOOLS=1 " if (
-            os.environ["FH_PROFILE"] == "short-no-thread-tools"
+        transport_env = "env BEST_AGENT_FH_STREAM_MODEL=1 " if (
+            os.environ["FH_PROFILE"] == "short-stream"
         ) else ""
         await self.exec_as_root(environment, r"""set -eu
 cat > /usr/local/bin/best-agent <<'SH'
@@ -26,7 +26,7 @@ PATH="/opt/best-agent/bin:$PATH"
 export PATH
 if [ "$1" = run ]; then
   shift
-  exec """ + tools_env + r"""/opt/best-agent/bin/best-agent run --process-close-policy release "$@"
+  exec """ + transport_env + r"""/opt/best-agent/bin/best-agent run --process-close-policy release "$@"
 fi
 exec /opt/best-agent/bin/best-agent "$@"
 SH

@@ -102,6 +102,7 @@ const server = createServer(async (request, response) => {
     const diagReplies=msg.filter(m=>m.role==="tool"&&diag.has(m.tool_call_id));
     if (rejectClosedTrial(tag, response)) return;
     log({tag,id,phase:"request",bytes:body.length,model:payload.model,request_time_ms:Date.now(),
+      request_stream:payload.stream === true,
       compact_context:compactContext,compact_call_ids:compactCalls,
       output_cap:payload.max_tokens ?? payload.max_completion_tokens,
       request_tool_count:selectedTools.length,
@@ -126,8 +127,8 @@ const server = createServer(async (request, response) => {
       outbound.end(body);
     });
     status=upstream.statusCode;
-    log({tag,id,phase:"headers",status});
     const sse = String(upstream.headers["content-type"]).includes("text/event-stream");
+    log({tag,id,phase:"headers",status,sse});
     let pending="";
     const observe=line=>{
       if(line.startsWith("data: "))line=line.slice(6);

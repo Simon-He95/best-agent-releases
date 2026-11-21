@@ -2,14 +2,14 @@ import json
 import os
 from pathlib import Path
 
-cohort = {"video-processing", "intrastat-meldung", "sqlite-db-truncate"}
+cohort = {"cargo-flight-dispatch", "batched-eval-parity", "sqlite-db-truncate"}
 selected = [entry.strip() for entry in os.environ.get("FH_TASKS", "").split(",") if entry.strip()]
 if not selected or len(selected) != len(set(selected)) or not set(selected) <= cohort:
-    raise SystemExit("Select unique tasks from the headless thread tool pilot")
+    raise SystemExit("Select unique tasks from the headless model streaming pilot")
 matrix = []
 for task in selected:
-    profiles = ["short", "short-no-thread-tools"]
-    if task == "video-processing":
+    profiles = ["short", "short-stream"]
+    if task == "batched-eval-parity":
         profiles.reverse()
     if os.environ.get("FH_REVERSE_ORDER") == "true":
         profiles.reverse()

@@ -24,15 +24,25 @@ for _ in {1..50}; do
   sleep .1
 done
 export FH_PORT=$(cat "$FH_ROOT/raw/port")
+preflight='{"model":"deepseek-v4.1-flash","messages":[{"role":"user","content":"Reply OK."}],"max_tokens":128}'
+if [ "$FH_PROFILE" = short-stream ]; then
+  preflight='{"model":"deepseek-v4.1-flash","messages":[{"role":"user","content":"Reply OK."}],"max_tokens":128,"stream":true,"stream_options":{"include_usage":true}}'
+fi
 curl --fail --silent --show-error --max-time 90 --output "$FH_ROOT/raw/preflight.json" \
   "http://127.0.0.1:$FH_PORT/preflight/v1/chat/completions" \
   -H "Authorization: Bearer $FH_OAUTH_REPRO_PROXY_KEY" -H "Content-Type: application/json" \
-  -d '{"model":"deepseek-v4.1-flash","messages":[{"role":"user","content":"Reply OK."}],"max_tokens":128}'
+  -d "$preflight"
 "$FH_ROOT/venv/bin/python" - <<'CHECK'
 import json,os
 from pathlib import Path
-d=json.loads((Path(os.environ["FH_ROOT"])/"raw/preflight.json").read_text())
-assert d.get("choices") and d.get("usage"), "Missing authenticated model response or usage"
+body=(Path(os.environ["FH_ROOT"])/"raw/preflight.json").read_text()
+if os.environ["FH_PROFILE"] == "short-stream":
+    events=[json.loads(line[6:]) for line in body.splitlines()
+            if line.startswith("data: ") and line[6:].strip() != "[DONE]"]
+    assert any(x.get("choices") for x in events) and any(x.get("usage") for x in events), "Missing authenticated stream or usage"
+else:
+    obj=json.loads(body)
+    assert obj.get("choices") and obj.get("usage"), "Missing authenticated model response or usage"
 CHECK
 printf 'Dim OAuth authenticated model preflight passed\n'
 "$FH_ROOT/venv/bin/python" "$script_root/prepare-tasks.py" >"$FH_ROOT/raw/prepare-tasks.log" 2>&1

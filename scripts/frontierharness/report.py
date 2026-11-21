@@ -8,7 +8,7 @@ from pathlib import Path
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
 arm = profile["profile"]
-assert arm in ("short", "short-no-thread-tools")
+assert arm in ("short", "short-stream")
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -34,7 +34,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     if requests:
         first = requests[0]
         assert first["model"] == "deepseek-v4.1-flash"
-        assert first["tool_count"] == (31 if arm == "short" else 26) and first["deadline"] is False
+        assert first["tool_count"] == 31 and first["deadline"] is False
+        assert first["request_stream"] == (arm == "short-stream")
         assert first["reasoning_effort"] == "max"
         assert first["output_cap"] == 131072
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
@@ -103,6 +104,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "root_subagent_starts": root_subagent_starts,
         "root_thread_tool_entries": root_thread_tool_entries,
         "initial_tool_count": requests[0].get("tool_count") if requests else None,
+        "initial_stream_requested": requests[0].get("request_stream") if requests else None,
+        "stream_response_count": sum(v["phase"] == "headers" and v.get("sse") for v in entries),
         "root_terminals": "|".join(terminal for _, terminal in terminal_runs),
         "compact_context_requests": sum(bool(v.get("compact_context")) for v in requests),
         "local_input_walls": sum(reason == "input-over-window" for reason in failures_by_run.values()),

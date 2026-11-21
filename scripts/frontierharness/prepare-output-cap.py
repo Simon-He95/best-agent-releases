@@ -22,10 +22,10 @@ replace_once(
 
 replace_once(
     "product-slices/thread-orchestration-root.ts",
-    """    const published = foundation.publish(
-      generationOptions,
-      Object.freeze([""",
-    """    const published = foundation.publish(
-      generationOptions,
-      process.env.BEST_AGENT_FH_OMIT_THREAD_TOOLS === "1" ? Object.freeze([]) : Object.freeze([""",
+    "    const generationOptions = foundation.generationOptions(taskSessions);",
+    """    const ordinaryOptions = foundation.generationOptions(taskSessions);
+    const generationOptions =
+      process.env.BEST_AGENT_FH_STREAM_MODEL === "1"
+        ? { ...ordinaryOptions, onModelObservation: () => {} }
+        : ordinaryOptions;""",
 )

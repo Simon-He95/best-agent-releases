@@ -3,7 +3,7 @@ set -euo pipefail
 mkdir -p "$FH_ROOT/packed" "$FH_ROOT/runtime/bin"
 cp "$(realpath "$(command -v node)")" "$FH_ROOT/runtime/bin/node"
 npm install --global --prefix "$FH_ROOT/runtime" --no-fund --no-audit npm@11.19.1 pnpm@10.34.9
-python3 scripts/frontierharness/prepare-declared-window.py
+python3 scripts/frontierharness/prepare-output-cap.py
 cd source
 corepack install
 pnpm install --frozen-lockfile

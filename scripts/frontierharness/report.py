@@ -8,11 +8,13 @@ from pathlib import Path
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
 arm = profile["profile"]
-assert arm in ("short", "short-window-recovery")
+assert arm in ("short", "short-fresh-review")
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
     ledger[entry["tag"]].append(entry)
+review_ledger = root / "raw/review.jsonl"
+reviews = {event["tag"]: event for event in map(json.loads, review_ledger.read_text().splitlines())} if review_ledger.exists() else {}
 
 
 def seconds(stage):
@@ -41,22 +43,32 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     failures_by_run = {}
     terminal_runs = []
     terminal = None
-    trace = path.parent / "agent/best-agent-evidence.jsonl"
-    if trace.exists():
+    review_requests = 0
+    review = reviews.get(path.parent.name, {})
+    agent = path.parent / "agent"
+    for filename in ("best-agent-evidence.jsonl", "review-evidence.jsonl"):
+        trace = agent / filename
+        if not trace.exists():
+            continue
         for line in trace.open("rb"):
+            if not line.endswith(b"\n"):
+                break
             if not any(marker in line[:130] for marker in (
-                b'"type":"header"', b'"type":"model-failure-diagnostic"',
+                b'"type":"model-request"', b'"type":"model-failure-diagnostic"',
                 b'"type":"terminal-snapshot"',
             )):
                 continue
             event = json.loads(line)
+            if event["type"] == "model-request" and filename == "review-evidence.jsonl":
+                review_requests += 1
             if event.get("runId") is None or event.get("resourceId") != event["runId"]:
                 continue
+            stage_run = (filename, event["runId"])
             if event["type"] == "model-failure-diagnostic":
-                failures_by_run[event["runId"]] = event["sourceReason"]
+                failures_by_run[stage_run] = event["sourceReason"]
             elif event["type"] == "terminal-snapshot":
                 terminal = event["snapshot"]["status"]
-                terminal_runs.append((event["runId"], terminal))
+                terminal_runs.append((stage_run, terminal))
     source_failure = failures_by_run.get(terminal_runs[-1][0]) if terminal_runs else None
     exception = (result.get("exception_info") or {}).get("exception_type")
     reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
@@ -94,6 +106,9 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     rows.append({
         "task": result["task_name"], "profile": profile["profile"], "outcome": outcome,
         "arm": arm,
+        "review_started": bool(review.get("review_started")),
+        "review_remaining_seconds": review.get("remaining_seconds"),
+        "review_model_requests": review_requests,
         "root_terminals": "|".join(terminal for _, terminal in terminal_runs),
         "compact_context_requests": sum(bool(v.get("compact_context")) for v in requests),
         "local_input_walls": sum(reason == "input-over-window" for reason in failures_by_run.values()),

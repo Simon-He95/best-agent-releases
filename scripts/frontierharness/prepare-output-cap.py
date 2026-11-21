@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -20,12 +21,11 @@ replace_once(
     apiKey: selectedApiKey,""",
 )
 
+guidance = Path(__file__).with_name("readonly-audit.txt").read_text().strip()
 replace_once(
-    "product-slices/thread-orchestration-root.ts",
-    """    const published = foundation.publish(
-      generationOptions,
-      Object.freeze([""",
-    """    const published = foundation.publish(
-      generationOptions,
-      process.env.BEST_AGENT_FH_OMIT_THREAD_TOOLS === "1" ? Object.freeze([]) : Object.freeze([""",
+    "v3-prompt-composition.ts",
+    "          ? HEADLESS_BEHAVIOR_INSTRUCTION_TEXT",
+    """          ? process.env.BEST_AGENT_FH_READONLY_AUDIT === "1"
+            ? HEADLESS_BEHAVIOR_INSTRUCTION_TEXT + """ + json.dumps(" " + guidance) + """
+            : HEADLESS_BEHAVIOR_INSTRUCTION_TEXT""",
 )

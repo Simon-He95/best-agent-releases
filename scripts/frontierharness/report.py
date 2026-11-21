@@ -8,7 +8,7 @@ from pathlib import Path
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
 arm = profile["profile"]
-assert arm in ("short", "short-no-thread-tools")
+assert arm in ("short", "short-readonly-audit")
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -34,7 +34,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     if requests:
         first = requests[0]
         assert first["model"] == "deepseek-v4.1-flash"
-        assert first["tool_count"] == (31 if arm == "short" else 26) and first["deadline"] is False
+        assert first["tool_count"] == 31 and first["deadline"] is False
+        assert first["request_stream"] is False
         assert first["reasoning_effort"] == "max"
         assert first["output_cap"] == 131072
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
@@ -42,6 +43,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     terminal_runs = []
     terminal = None
     root_subagent_starts = 0
+    root_subagent_results = 0
+    observed_completed_operations = set()
     root_thread_tool_entries = 0
     trace = path.parent / "agent/best-agent-evidence.jsonl"
     if trace.exists():
@@ -59,6 +62,20 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
             elif event["type"] == "terminal-snapshot":
                 terminal = event["snapshot"]["status"]
                 terminal_runs.append((event["runId"], terminal))
+                for message in event["snapshot"]["transcript"]:
+                    if message["kind"] != "tool":
+                        continue
+                    result_ = message["result"]
+                    closure = result_["closure"]
+                    if closure.get("status") != "succeeded":
+                        continue
+                    if result_["name"] == "subagent-result":
+                        root_subagent_results += 1
+                    elif result_["name"] in ("subagent-status", "subagent-wait"):
+                        observed_completed_operations.update(
+                            operation["operationId"] for operation in closure["payload"]["operations"]
+                            if operation["state"].get("terminal") == "completed"
+                        )
             elif event["type"] == "tool-entry" and event["bindingRef"] == "best-agent/cli/subagent-start-v3":
                 root_subagent_starts += 1
             elif event["type"] == "tool-entry" and event["bindingRef"].startswith("best-agent/cli/thread-"):
@@ -101,6 +118,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "task": result["task_name"], "profile": profile["profile"], "outcome": outcome,
         "arm": arm,
         "root_subagent_starts": root_subagent_starts,
+        "root_subagent_results": root_subagent_results,
+        "root_observed_completed_subagents": len(observed_completed_operations),
         "root_thread_tool_entries": root_thread_tool_entries,
         "initial_tool_count": requests[0].get("tool_count") if requests else None,
         "root_terminals": "|".join(terminal for _, terminal in terminal_runs),

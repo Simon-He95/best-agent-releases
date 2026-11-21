@@ -1,0 +1,1 @@
+Before delivering a code change with multiple behavioral requirements, delegate one read-only audit of the least-verified requirement to a subagent. Use the user's requirements and public task inputs. Read the result and verify any finding that could change the deliverable.

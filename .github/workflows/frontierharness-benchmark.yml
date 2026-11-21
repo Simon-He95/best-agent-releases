@@ -47,7 +47,7 @@ jobs:
         run: python3 scripts/frontierharness/plan-pairs.py
 
   benchmark:
-    name: ${{ matrix.profile }} / ${{ matrix.task }}
+    name: ${{ matrix.profile }} / ${{ matrix.task }} / r${{ matrix.repeat }}
     needs: plan
     strategy:
       fail-fast: false
@@ -99,7 +99,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: score-${{ matrix.profile }}-${{ matrix.task }}
+          name: score-${{ matrix.profile }}-${{ matrix.task }}-r${{ matrix.repeat }}
           path: |
             ${{ runner.temp }}/frontier/report/profile.json
             ${{ runner.temp }}/frontier/report/summary.json
@@ -116,7 +116,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: diagnostics-${{ matrix.profile }}-${{ matrix.task }}
+          name: diagnostics-${{ matrix.profile }}-${{ matrix.task }}-r${{ matrix.repeat }}
           path: ${{ runner.temp }}/frontier/report/diagnostics.tar.gz.age
           retention-days: 14
           if-no-files-found: error

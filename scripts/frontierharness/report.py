@@ -8,7 +8,7 @@ from pathlib import Path
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
 arm = profile["profile"]
-assert arm in ("short", "short-independent-diagnosis")
+assert arm in ("short", "short-no-thread-tools")
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -34,15 +34,15 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     if requests:
         first = requests[0]
         assert first["model"] == "deepseek-v4.1-flash"
-        assert first["tool_count"] == 31 and first["deadline"] is False
+        assert first["tool_count"] == (31 if arm == "short" else 26) and first["deadline"] is False
         assert first["reasoning_effort"] == "max"
         assert first["output_cap"] == 131072
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
-        assert first["diagnosis_description_applied"] == (arm == "short-independent-diagnosis")
     failures_by_run = {}
     terminal_runs = []
     terminal = None
     root_subagent_starts = 0
+    root_thread_tool_entries = 0
     trace = path.parent / "agent/best-agent-evidence.jsonl"
     if trace.exists():
         for line in trace.open("rb"):
@@ -61,6 +61,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
                 terminal_runs.append((event["runId"], terminal))
             elif event["type"] == "tool-entry" and event["bindingRef"] == "best-agent/cli/subagent-start-v3":
                 root_subagent_starts += 1
+            elif event["type"] == "tool-entry" and event["bindingRef"].startswith("best-agent/cli/thread-"):
+                root_thread_tool_entries += 1
     source_failure = failures_by_run.get(terminal_runs[-1][0]) if terminal_runs else None
     exception = (result.get("exception_info") or {}).get("exception_type")
     reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
@@ -99,7 +101,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "task": result["task_name"], "profile": profile["profile"], "outcome": outcome,
         "arm": arm,
         "root_subagent_starts": root_subagent_starts,
-        "diagnosis_description_applied_requests": sum(bool(v.get("diagnosis_description_applied")) for v in requests),
+        "root_thread_tool_entries": root_thread_tool_entries,
+        "initial_tool_count": requests[0].get("tool_count") if requests else None,
         "root_terminals": "|".join(terminal for _, terminal in terminal_runs),
         "compact_context_requests": sum(bool(v.get("compact_context")) for v in requests),
         "local_input_walls": sum(reason == "input-over-window" for reason in failures_by_run.values()),
@@ -108,7 +111,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         ) if cutoff_ms is not None else 0,
         "requests_blocked_after_timeout": sum(v["phase"] == "blocked_after_timeout" for v in entries),
         "compact_requests_with_original_tools": sum(
-            bool(v.get("compact_context")) and v.get("request_tool_count") == 31
+            bool(v.get("compact_context")) and v.get("request_tool_count") == requests[0]["tool_count"]
             and v.get("request_tool_digest") == requests[0]["tool_digest"]
             for v in requests
         ) if requests else 0,

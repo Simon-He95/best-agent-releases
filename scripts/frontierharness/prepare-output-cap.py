@@ -19,3 +19,13 @@ replace_once(
     ...(benchmarkModel ? { maxOutputTokens: benchmarkOutputCap } : {}),
     apiKey: selectedApiKey,""",
 )
+
+replace_once(
+    "product-slices/thread-orchestration-root.ts",
+    """    const published = foundation.publish(
+      generationOptions,
+      Object.freeze([""",
+    """    const published = foundation.publish(
+      generationOptions,
+      process.env.BEST_AGENT_FH_OMIT_THREAD_TOOLS === "1" ? Object.freeze([]) : Object.freeze([""",
+)

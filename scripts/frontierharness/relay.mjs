@@ -1,14 +1,16 @@
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { request as requestHttps } from "node:https";
 import { pathToFileURL } from "node:url";
+import { join } from "node:path";
 
 const repo = process.env.FH_REPO;
 const model = "deepseek-v4.1-flash";
 const marker = process.env.FH_OAUTH_REPRO_PROXY_KEY;
 const ledger = process.env.FH_LEDGER;
 const log = value => appendFileSync(ledger, JSON.stringify(value)+"\n",{mode:0o600});
+const cutoff = join(process.env.FH_AB_DIR, "cutoff");
 let ordinal=0;
 const firstTags=new Set();
 const digest=x=>createHash("sha256").update(JSON.stringify(x)).digest("hex");
@@ -22,6 +24,15 @@ if (!session.access || !session.baseUrl || !(session.expires > Date.now() + 7 * 
 const target = new URL(session.baseUrl.replace(/\/$/, "") + "/chat/completions");
 if (target.protocol !== "https:" || target.hostname === "api.deepseek.com") {
   throw new Error("Expected the HTTPS Dim OAuth endpoint");
+}
+
+function rejectClosedTrial(tag, response) {
+  if (!existsSync(join(cutoff, tag))) return false;
+  log({tag,phase:"blocked_after_timeout",request_time_ms:Date.now()});
+  response.writeHead(410, {"Content-Type":"application/json"}).end(JSON.stringify({
+    error: {type:"trial_finished",message:"The Harbor agent phase has ended."},
+  }));
+  return true;
 }
 
 const server = createServer(async (request, response) => {
@@ -39,6 +50,7 @@ const server = createServer(async (request, response) => {
     return;
   }
   const tag=route[1], id=++ordinal;
+  if (rejectClosedTrial(tag, response)) return;
   const abort = new AbortController();
   let usage, status, recorded=false;
   const recordEnd = ended => {
@@ -86,6 +98,7 @@ const server = createServer(async (request, response) => {
       catch{return false;}
     });
     const diagReplies=msg.filter(m=>m.role==="tool"&&diag.has(m.tool_call_id));
+    if (rejectClosedTrial(tag, response)) return;
     log({tag,id,phase:"request",bytes:body.length,model:payload.model,request_time_ms:Date.now(),
       compact_context:compactContext,compact_call_ids:compactCalls,
       output_cap:payload.max_tokens ?? payload.max_completion_tokens,

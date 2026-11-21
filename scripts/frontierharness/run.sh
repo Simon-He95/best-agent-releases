@@ -3,6 +3,7 @@ set -euo pipefail
 umask 077
 export FH_ROOT="${FH_ROOT:-$RUNNER_TEMP/frontier}"
 export FH_AB_DIR="$FH_ROOT/raw"
+mkdir -p "$FH_AB_DIR/cutoff"
 script_root=$(cd "$(dirname "$0")" && pwd)
 export PYTHONPATH="$script_root:$PWD/source"
 export FH_REPO="$PWD/source"

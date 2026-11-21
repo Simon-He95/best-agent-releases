@@ -100,6 +100,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "requests_received_after_agent_window": sum(
             v["request_time_ms"] > cutoff_ms for v in requests
         ) if cutoff_ms is not None else 0,
+        "requests_blocked_after_timeout": sum(v["phase"] == "blocked_after_timeout" for v in entries),
         "compact_requests_with_original_tools": sum(
             bool(v.get("compact_context")) and v.get("request_tool_count") == 31
             and v.get("request_tool_digest") == requests[0]["tool_digest"]

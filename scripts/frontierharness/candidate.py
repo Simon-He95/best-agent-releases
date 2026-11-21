@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -6,6 +7,14 @@ from benchmarks.frontierharness.agents.best_agent import BestAgent
 
 
 class Candidate(BestAgent):
+    async def run(self, instruction, environment, context):
+        try:
+            await super().run(instruction, environment, context)
+        except asyncio.CancelledError:
+            tag = self.logs_dir.parent.name
+            (Path(os.environ["FH_AB_DIR"]) / "cutoff" / tag).touch()
+            raise
+
     async def install(self, environment):
         compact = ' --compact-dir "$BEST_AGENT_STORAGE_ROOT/compact"' if (
             os.environ["FH_PROFILE"] == "short-window-recovery"

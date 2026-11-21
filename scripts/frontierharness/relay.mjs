@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { request as requestHttps } from "node:https";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { projectDiagnosticTools } from "./independent-diagnosis.mjs";
 
 const repo = process.env.FH_REPO;
 const model = "deepseek-v4.1-flash";
@@ -79,6 +80,10 @@ const server = createServer(async (request, response) => {
       response.writeHead(400).end();
       return;
     }
+    const coreTools = payload.tools;
+    const selectedTools = projectDiagnosticTools(coreTools, process.env.FH_PROFILE);
+    const diagnosisApplied = selectedTools !== coreTools;
+    const forwarded = diagnosisApplied ? Buffer.from(JSON.stringify({ ...payload, tools: selectedTools })) : body;
     const first=!firstTags.has(tag);
     if(first) firstTags.add(tag);
     const system=first?(payload.messages??[]).filter(m=>m.role==="system").map(m=>m.content):[];
@@ -99,15 +104,16 @@ const server = createServer(async (request, response) => {
     });
     const diagReplies=msg.filter(m=>m.role==="tool"&&diag.has(m.tool_call_id));
     if (rejectClosedTrial(tag, response)) return;
-    log({tag,id,phase:"request",bytes:body.length,model:payload.model,request_time_ms:Date.now(),
+    log({tag,id,phase:"request",bytes:forwarded.length,model:payload.model,request_time_ms:Date.now(),
+      diagnosis_description_applied:diagnosisApplied,
       compact_context:compactContext,compact_call_ids:compactCalls,
       output_cap:payload.max_tokens ?? payload.max_completion_tokens,
-      request_tool_count:payload.tools?.length,
-      request_tool_digest:digest(payload.tools ?? []),
+      request_tool_count:selectedTools?.length,
+      request_tool_digest:digest(selectedTools ?? []),
       self_diagnostic_call_ids:[...diag],
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
-      ...(first?{tool_count:payload.tools?.length,tool_digest:digest(payload.tools ?? []),core_tool_digest:digest((payload.tools??[]).filter(
-           tool=>!["compact_start","compact_status"].includes(tool.function?.name))),system_count:system.length,reasoning_effort:payload.reasoning_effort,
+      ...(first?{tool_count:selectedTools?.length,tool_digest:digest(selectedTools ?? []),core_tool_digest:digest(coreTools??[]),
+         system_count:system.length,reasoning_effort:payload.reasoning_effort,
          baseline_first_instruction:digest(system[0] ?? null),deadline:system.some(x=>String(x).includes("Run deadline (UTC)"))}:{})});
     const credential = { access: session.access };
     const upstream = await new Promise((resolve, reject) => {
@@ -115,13 +121,13 @@ const server = createServer(async (request, response) => {
         method: "POST",
         headers: Object.fromEntries(projectDimOAuthTransportHeaders({
           "Content-Type": "application/json",
-          "Content-Length": String(body.length),
+          "Content-Length": String(forwarded.length),
           Authorization: "Bearer " + credential.access,
         })),
         signal: abort.signal,
       }, resolve);
       outbound.on("error", reject);
-      outbound.end(body);
+      outbound.end(forwarded);
     });
     status=upstream.statusCode;
     log({tag,id,phase:"headers",status});

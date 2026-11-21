@@ -26,8 +26,7 @@ async def main():
     for config, item in zip(configs, downloaded.results):
         task = Task(item.path)
         assert task.name == config.name
-        records.append({"name": task.name, "checksum": task.checksum, "path": str(item.path),
-                        "agent_timeout_sec": task.config.agent.timeout_sec})
+        records.append({"name": task.name, "checksum": task.checksum, "path": str(item.path)})
     (root / "raw/tasks.json").write_text(json.dumps(records, indent=2))
     (root / "raw/job-config.json").write_text(json.dumps({
         "datasets": [], "tasks": [{"path": r["path"]} for r in records],

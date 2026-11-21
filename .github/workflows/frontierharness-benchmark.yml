@@ -1,4 +1,4 @@
-name: FrontierHarness fresh session review pilot
+name: FrontierHarness independent diagnostic ToolCall pilot
 run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:
@@ -13,7 +13,7 @@ on:
         required: true
         type: string
       tasks:
-        description: Comma-separated subset of the fresh session review pilot
+        description: Comma-separated subset of the independent diagnostic pilot
         required: false
         type: string
         default: ""

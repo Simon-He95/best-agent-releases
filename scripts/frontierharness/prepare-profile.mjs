@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const folder = dirname(fileURLToPath(import.meta.url));
 const profile = process.env.FH_PROFILE;
-if (!["short", "short-fresh-review"].includes(profile)) throw new Error("Unknown profile");
+if (!["short", "short-independent-diagnosis"].includes(profile)) throw new Error("Unknown profile");
 const baseline = readFileSync(join(folder, "short.txt"), "utf8").trim();
 const path = join(process.env.FH_ROOT, "runtime/lib/node_modules/@best-agent/cli/dist/index.js");
 const bundle = readFileSync(path, "utf8");

@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ""
+      reverse_order:
+        description: Reverse each pair for confirmation
+        required: false
+        type: boolean
+        default: false
       label:
         description: Unique run label
         required: false
@@ -44,6 +49,7 @@ jobs:
         name: Plan the task pairs
         env:
           FH_TASKS: ${{ inputs.tasks }}
+          FH_REVERSE_ORDER: ${{ inputs.reverse_order }}
         run: python3 scripts/frontierharness/plan-pairs.py
 
   benchmark:

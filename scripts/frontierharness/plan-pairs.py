@@ -11,6 +11,8 @@ for task in selected:
     profiles = ["short", "short-early-high"]
     if task in {"schemelike-metacircular-eval", "log-summary-date-ranges"}:
         profiles.reverse()
+    if os.environ.get("FH_REVERSE_ORDER") == "true":
+        profiles.reverse()
     matrix.append({"task": task, "first": profiles[0], "second": profiles[1]})
 with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
     print("matrix=" + json.dumps({"include": matrix}, separators=(",", ":")), file=output)

@@ -36,6 +36,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         assert first["model"] == "deepseek-v4.1-flash"
         assert first["tool_count"] == 31 and first["deadline"] is False
         assert first["reasoning_effort"] == "max"
+        assert first["output_cap"] == 131072
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
     failures_by_run = {}
     terminal_runs = []
@@ -60,6 +61,9 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     exception = (result.get("exception_info") or {}).get("exception_type")
     reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
     statuses = {v["id"]: v["status"] for v in entries if v["phase"] == "headers"}
+    ended_at = (result.get("agent_execution") or {}).get("finished_at")
+    cutoff_ms = (datetime.fromisoformat(ended_at.replace("Z", "+00:00")).timestamp() * 1000
+                 if ended_at else None)
     last_status = statuses.get(requests[-1]["id"]) if requests else None
     if exception == "AgentTimeoutError":
         outcome = "timeout"
@@ -93,6 +97,9 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "root_terminals": "|".join(terminal for _, terminal in terminal_runs),
         "compact_context_requests": sum(bool(v.get("compact_context")) for v in requests),
         "local_input_walls": sum(reason == "input-over-window" for reason in failures_by_run.values()),
+        "requests_received_after_agent_window": sum(
+            v["request_time_ms"] > cutoff_ms for v in requests
+        ) if cutoff_ms is not None else 0,
         "compact_requests_with_original_tools": sum(
             bool(v.get("compact_context")) and v.get("request_tool_count") == 31
             and v.get("request_tool_digest") == requests[0]["tool_digest"]

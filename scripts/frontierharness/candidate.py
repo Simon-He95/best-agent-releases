@@ -10,6 +10,7 @@ class Candidate(BestAgent):
         compact = ' --compact-dir "$BEST_AGENT_STORAGE_ROOT/compact"' if (
             os.environ["FH_PROFILE"] == "short-window-recovery"
         ) else ""
+        recovery_env = "env BEST_AGENT_BENCHMARK_WINDOW_RECOVERY=1 " if compact else ""
         await self.exec_as_root(environment, r"""set -eu
 cat > /usr/local/bin/best-agent <<'SH'
 #!/bin/sh
@@ -17,7 +18,7 @@ PATH="/opt/best-agent/bin:$PATH"
 export PATH
 if [ "$1" = run ]; then
   shift
-  exec /opt/best-agent/bin/best-agent run --process-close-policy release""" + compact + r""" "$@"
+  exec """ + recovery_env + r"""/opt/best-agent/bin/best-agent run --process-close-policy release""" + compact + r""" "$@"
 fi
 exec /opt/best-agent/bin/best-agent "$@"
 SH

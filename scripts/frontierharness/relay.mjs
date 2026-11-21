@@ -86,8 +86,9 @@ const server = createServer(async (request, response) => {
       catch{return false;}
     });
     const diagReplies=msg.filter(m=>m.role==="tool"&&diag.has(m.tool_call_id));
-    log({tag,id,phase:"request",bytes:body.length,model:payload.model,
+    log({tag,id,phase:"request",bytes:body.length,model:payload.model,request_time_ms:Date.now(),
       compact_context:compactContext,compact_call_ids:compactCalls,
+      output_cap:payload.max_tokens ?? payload.max_completion_tokens,
       request_tool_count:payload.tools?.length,
       request_tool_digest:digest(payload.tools ?? []),
       self_diagnostic_call_ids:[...diag],

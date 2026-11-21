@@ -53,10 +53,11 @@ const server = createServer(async (request, response) => {
   if (rejectClosedTrial(tag, response)) return;
   const abort = new AbortController();
   let usage, status, recorded=false;
+  let upstreamTiming, upstreamFailure;
   const recordEnd = ended => {
     if (recorded) return;
     recorded=true;
-    log({tag,id,phase:"finish",status,usage,ended});
+    log({tag,id,phase:"finish",status,usage,ended,upstream_failure:upstreamFailure});
   };
   response.on("close", () => {
     abort.abort();
@@ -113,6 +114,15 @@ const server = createServer(async (request, response) => {
          system_count:system.length,reasoning_effort:payload.reasoning_effort,
          baseline_first_instruction:digest(system[0] ?? null),deadline:system.some(x=>String(x).includes("Run deadline (UTC)"))}:{})});
     const credential = { access: session.access };
+    const upstreamStart = performance.now();
+    const elapsed = () => Math.round(performance.now() - upstreamStart);
+    upstreamTiming = {
+      socket_assigned_ms: null,
+      tcp_ready_ms: null,
+      tls_ready_ms: null,
+      locally_flushed_ms: null,
+      reused_socket: false,
+    };
     const upstream = await new Promise((resolve, reject) => {
       const outbound = requestHttps(target, {
         method: "POST",
@@ -123,12 +133,30 @@ const server = createServer(async (request, response) => {
         })),
         signal: abort.signal,
       }, resolve);
+      outbound.once("socket", socket => {
+        upstreamTiming.socket_assigned_ms = elapsed();
+        upstreamTiming.reused_socket = outbound.reusedSocket;
+        if (socket.connecting) {
+          socket.once("connect", () => { upstreamTiming.tcp_ready_ms = elapsed(); });
+        } else {
+          upstreamTiming.tcp_ready_ms = elapsed();
+        }
+        if (socket.authorized || outbound.reusedSocket) {
+          upstreamTiming.tls_ready_ms = elapsed();
+        } else {
+          socket.once("secureConnect", () => { upstreamTiming.tls_ready_ms = elapsed(); });
+        }
+      });
+      outbound.once("finish", () => {
+        // Node has handed the request bytes to the local transport. The response has its own receipt.
+        upstreamTiming.locally_flushed_ms = elapsed();
+      });
       outbound.on("error", reject);
       outbound.end(body);
     });
     status=upstream.statusCode;
     const sse = String(upstream.headers["content-type"]).includes("text/event-stream");
-    log({tag,id,phase:"headers",status,sse});
+    log({tag,id,phase:"headers",status,sse,upstream_timing:upstreamTiming});
     let pending="";
     const observe=line=>{
       if(line.startsWith("data: "))line=line.slice(6);
@@ -156,6 +184,10 @@ const server = createServer(async (request, response) => {
     upstream.pipe(response);
   } catch (error) {
     console.error(new Date().toISOString(), "relay-error", error.code ?? error.name);
+    if (upstreamTiming) {
+      upstreamFailure = {code:error.code ?? error.name,syscall:error.syscall,
+        aborted:abort.signal.aborted,upstream_timing:{...upstreamTiming}};
+    }
     if (!response.headersSent) response.writeHead(502).end("Local OAuth relay request failed.");
     else response.destroy();
   }

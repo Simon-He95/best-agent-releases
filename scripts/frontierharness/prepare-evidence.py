@@ -5,7 +5,8 @@ original = source.read_text()
 edited = original
 for old, new in (
     ('import { open, type FileHandle } from "node:fs/promises";',
-     'import { open } from "node:fs/promises";\nimport { openEvidenceEgress } from "./ci-evidence-egress.js";'),
+     'import { open, readFile } from "node:fs/promises";\n'
+     'import { request as requestEvidence } from "node:http";'),
     ('  return new AttemptEvidenceWriter(await open(path, "wx"), clock);',
      '  const file = path === "/logs/agent/best-agent-evidence.jsonl"\n'
      '    ? await openEvidenceEgress()\n'
@@ -27,7 +28,5 @@ for old, new in (
         raise SystemExit(f"Pinned evidence writer changed at {old}")
     edited = edited.replace(old, new)
 
-source.write_text(edited)
-source.with_name("ci-evidence-egress.ts").write_bytes(
-    Path(__file__).with_name("ci-evidence-egress.ts").read_bytes()
-)
+egress = Path(__file__).with_name("ci-evidence-egress.ts").read_text()
+source.write_text(edited + "\n" + egress)

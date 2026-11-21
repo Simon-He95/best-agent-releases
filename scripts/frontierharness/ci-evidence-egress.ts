@@ -1,7 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { request } from "node:http";
-
-export async function openEvidenceEgress() {
+async function openEvidenceEgress() {
   const providerPath = process.env.BEST_AGENT_PROVIDER_CONFIG;
   const port = process.env.FH_EVIDENCE_PORT;
   if (!providerPath || !port) throw new Error("Missing CI evidence transport configuration");
@@ -11,7 +8,7 @@ export async function openEvidenceEgress() {
   };
   const destination = new URL("attempt-evidence", provider.baseURL);
   destination.port = port;
-  const upload = request(destination, {
+  const upload = requestEvidence(destination, {
     method: "POST",
     headers: { Authorization: "Bearer " + provider.apiKey },
   });

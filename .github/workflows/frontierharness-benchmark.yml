@@ -1,4 +1,4 @@
-name: FrontierHarness timeout cleanup smoke
+name: FrontierHarness Harbor relay cutoff smoke
 run-name: ${{ inputs.label }}
 
 on:
@@ -13,18 +13,24 @@ permissions:
   contents: read
 
 jobs:
-  deadline:
+  cutoff:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Measure outer cancellation and scoped cleanup
-        run: python3 scripts/frontierharness/timeout-cleanup-smoke.py "$RUNNER_TEMP/timeout-cleanup.json"
+      - name: Exercise the pinned Harbor cancellation boundary
+        run: |
+          python3 -m venv "$RUNNER_TEMP/cutoff-venv"
+          "$RUNNER_TEMP/cutoff-venv/bin/pip" -q install 'harbor==0.14.0'
+          export PATH="$RUNNER_TEMP/cutoff-venv/bin:$PATH"
+          export PYTHONPATH="$PWD/scripts/frontierharness"
+          python scripts/frontierharness/relay_cutoff_smoke.py "$RUNNER_TEMP/cutoff"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
         with:
-          name: timeout-cleanup-receipts
-          path: ${{ runner.temp }}/timeout-cleanup.json
-          if-no-files-found: error
+          name: relay-cutoff-receipts
+          path: ${{ runner.temp }}/cutoff/receipts.json
+          if-no-files-found: warn
           retention-days: 14

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { request as requestHttps } from "node:https";
 import { pathToFileURL } from "node:url";
+import { backgroundPreference } from "./routing.mjs";
 
 const repo = process.env.FH_REPO;
 const model = "deepseek-v4.1-flash";
@@ -82,7 +83,9 @@ const server = createServer(async (request, response) => {
       self_diagnostic_call_ids:[...diag],
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
       ...(first?{tool_count:payload.tools?.length,tool_digest:digest(payload.tools ?? []),system_count:system.length,reasoning_effort:payload.reasoning_effort,
-         baseline_first_instruction:digest(system[0] ?? null),deadline:system.some(x=>String(x).includes("Run deadline (UTC)"))}:{})});
+         baseline_first_instruction:digest(system[0] ?? null),deadline:system.some(x=>String(x).includes("Run deadline (UTC)")),
+         routing_preference:system.filter(x=>typeof x==="string"&&x.includes(backgroundPreference)).length,
+         routing_neutral_digest:digest(system.map(x=>typeof x==="string"?x.replace(backgroundPreference,""):x))}:{})});
     const credential = { access: session.access };
     const upstream = await new Promise((resolve, reject) => {
       const outbound = requestHttps(target, {

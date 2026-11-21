@@ -35,15 +35,17 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         assert first["tool_count"] == 31 and first["deadline"] is False
         assert first["reasoning_effort"] == "max"
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
+        assert first["routing_preference"] == (1 if profile["profile"] == "short" else 0)
     root_id = None
     source_failure = None
     terminal = None
+    routing_calls = {"workspace-exec-v3": 0, "process-start-v1": 0, "process-read-v1": 0}
     trace = path.parent / "agent/best-agent-evidence.jsonl"
     if trace.exists():
         for line in trace.open("rb"):
             if not any(marker in line[:130] for marker in (
                 b'"type":"header"', b'"type":"model-failure-diagnostic"',
-                b'"type":"terminal-snapshot"',
+                b'"type":"terminal-snapshot"', b'"type":"tool-entry"',
             )):
                 continue
             event = json.loads(line)
@@ -53,6 +55,10 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
                 source_failure = event["sourceReason"]
             elif event.get("runId") == root_id and event["type"] == "terminal-snapshot":
                 terminal = event["snapshot"]["status"]
+            elif event.get("runId") == root_id and event["type"] == "tool-entry":
+                binding = event["bindingRef"].rsplit("/", 1)[-1]
+                if binding in routing_calls:
+                    routing_calls[binding] += 1
     exception = (result.get("exception_info") or {}).get("exception_type")
     reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
     statuses = {v["id"]: v["status"] for v in entries if v["phase"] == "headers"}
@@ -99,6 +105,10 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "model_requests": len(requests), "requests_with_usage": len(receipts),
         "tool_digest": requests[0].get("tool_digest") if requests else None,
         "system_count": requests[0].get("system_count") if requests else None,
+        "routing_neutral_digest": requests[0].get("routing_neutral_digest") if requests else None,
+        "root_exec_calls": routing_calls["workspace-exec-v3"],
+        "root_process_starts": routing_calls["process-start-v1"],
+        "root_process_reads": routing_calls["process-read-v1"],
         "checks_passed": checks.get("passed"), "checks_total": checks.get("tests"),
     })
 if not rows:

@@ -52,11 +52,11 @@ const server = createServer(async (request, response) => {
   const tag=route[1], id=++ordinal;
   if (rejectClosedTrial(tag, response)) return;
   const abort = new AbortController();
-  let usage, status, recorded=false;
+  let usage, status, recorded=false, modelRejected=false;
   const recordEnd = ended => {
     if (recorded) return;
     recorded=true;
-    log({tag,id,phase:"finish",status,usage,ended});
+    log({tag,id,phase:"finish",status,usage,ended,model_rejected_locally:modelRejected});
   };
   response.on("close", () => {
     abort.abort();
@@ -76,10 +76,12 @@ const server = createServer(async (request, response) => {
     const body = Buffer.concat(chunks);
     const payload=JSON.parse(body.toString());
     if (payload.model !== model) {
+      modelRejected = true;
       response.writeHead(400).end();
       return;
     }
     const selectedTools = payload.tools ?? [];
+    const subagent = selectedTools.find(tool => tool.function?.name === "subagent");
     const coreTools = selectedTools.filter(tool => !tool.function?.name?.startsWith("thread-"));
     const first=!firstTags.has(tag);
     if(first) firstTags.add(tag);
@@ -110,6 +112,8 @@ const server = createServer(async (request, response) => {
       self_diagnostic_call_ids:[...diag],
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
       ...(first?{tool_count:selectedTools.length,tool_digest:digest(selectedTools),core_tool_digest:digest(coreTools),
+         other_tools_digest:digest(selectedTools.filter(tool => tool !== subagent)),
+         subagent_has_model_field:subagent?.function?.parameters?.properties?.model !== undefined,
          system_count:system.length,reasoning_effort:payload.reasoning_effort,
          baseline_first_instruction:digest(system[0] ?? null),deadline:system.some(x=>String(x).includes("Run deadline (UTC)"))}:{})});
     const credential = { access: session.access };

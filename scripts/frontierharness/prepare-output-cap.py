@@ -21,6 +21,16 @@ replace_once(
     apiKey: selectedApiKey,""",
 )
 
+replace_once(
+    "v3-run-options.ts",
+    "    connection: oauthConnection,\n    // A pinned id is admitted",
+    """    connection: oauthConnection,
+    ...(environment.BEST_AGENT_FH_SINGLE_CHILD_MODEL === "1"
+      ? { records: [{ id: providerConfig.model, type: "chat" }] }
+      : {}),
+    // A pinned id is admitted""",
+)
+
 guidance = Path(__file__).with_name("readonly-audit.txt").read_text().strip()
 replace_once(
     "v3-prompt-composition.ts",

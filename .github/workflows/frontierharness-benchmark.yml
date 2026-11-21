@@ -1,4 +1,4 @@
-name: FrontierHarness headless read-only audit pilot
+name: FrontierHarness single-model subagent catalog pilot
 run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:
@@ -13,7 +13,7 @@ on:
         required: true
         type: string
       tasks:
-        description: Comma-separated subset of the headless read-only audit pilot
+        description: Comma-separated subset of the single-model subagent catalog pilot
         required: false
         type: string
         default: ""

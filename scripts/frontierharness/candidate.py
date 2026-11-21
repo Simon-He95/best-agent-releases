@@ -16,9 +16,9 @@ class Candidate(BestAgent):
             raise
 
     async def install(self, environment):
-        audit_env = "env BEST_AGENT_FH_READONLY_AUDIT=1 " if (
-            os.environ["FH_PROFILE"] == "short-readonly-audit"
-        ) else ""
+        audit_env = "env BEST_AGENT_FH_READONLY_AUDIT=1 "
+        if os.environ["FH_PROFILE"] == "short-readonly-audit-single-model":
+            audit_env += "BEST_AGENT_FH_SINGLE_CHILD_MODEL=1 "
         await self.exec_as_root(environment, r"""set -eu
 cat > /usr/local/bin/best-agent <<'SH'
 #!/bin/sh

@@ -8,7 +8,7 @@ from pathlib import Path
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
 arm = profile["profile"]
-assert arm in ("short", "short-readonly-audit")
+assert arm in ("short-readonly-audit", "short-readonly-audit-single-model")
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -36,6 +36,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         assert first["model"] == "deepseek-v4.1-flash"
         assert first["tool_count"] == 31 and first["deadline"] is False
         assert first["request_stream"] is False
+        assert first["subagent_has_model_field"] == (arm == "short-readonly-audit")
         assert first["reasoning_effort"] == "max"
         assert first["output_cap"] == 131072
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
@@ -122,6 +123,10 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "root_observed_completed_subagents": len(observed_completed_operations),
         "root_thread_tool_entries": root_thread_tool_entries,
         "initial_tool_count": requests[0].get("tool_count") if requests else None,
+        "initial_subagent_has_model_field": requests[0].get("subagent_has_model_field") if requests else None,
+        "other_tools_digest": requests[0].get("other_tools_digest") if requests else None,
+        "relay_model_rejections": sum(v["phase"] == "finish" and v.get("model_rejected_locally", False)
+                                      for v in entries),
         "root_terminals": "|".join(terminal for _, terminal in terminal_runs),
         "compact_context_requests": sum(bool(v.get("compact_context")) for v in requests),
         "local_input_walls": sum(reason == "input-over-window" for reason in failures_by_run.values()),

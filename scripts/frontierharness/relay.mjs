@@ -11,6 +11,9 @@ const marker = process.env.FH_OAUTH_REPRO_PROXY_KEY;
 const ledger = process.env.FH_LEDGER;
 const log = value => appendFileSync(ledger, JSON.stringify(value)+"\n",{mode:0o600});
 const cutoff = join(process.env.FH_AB_DIR, "cutoff");
+const directoryGuidance = " For directory discovery, start with a nonrecursive listing of the path you need.";
+const describeShallowListing = process.env.FH_PROFILE === "short-exec-shallow-listing";
+const maxRequestBytes = 8 * 1024 * 1024;
 let ordinal=0;
 const firstTags=new Set();
 const digest=x=>createHash("sha256").update(JSON.stringify(x)).digest("hex");
@@ -67,19 +70,30 @@ const server = createServer(async (request, response) => {
     let size = 0;
     for await (const chunk of request) {
       size += chunk.length;
-      if (size > 8 * 1024 * 1024) {
+      if (size > maxRequestBytes) {
         response.writeHead(413).end();
         return;
       }
       chunks.push(chunk);
     }
-    const body = Buffer.concat(chunks);
+    let body = Buffer.concat(chunks);
     const payload=JSON.parse(body.toString());
     if (payload.model !== model) {
       response.writeHead(400).end();
       return;
     }
     const selectedTools = payload.tools ?? [];
+    const originalToolDigest = digest(selectedTools);
+    const execTool = selectedTools.find(spec => spec.function?.name === "exec");
+    const directoryGuidanceApplied = describeShallowListing && !!execTool;
+    if (directoryGuidanceApplied) {
+      execTool.function.description += directoryGuidance;
+      body = Buffer.from(JSON.stringify(payload));
+      if (body.length > maxRequestBytes) {
+        response.writeHead(413).end();
+        return;
+      }
+    }
     const coreTools = selectedTools.filter(tool => !tool.function?.name?.startsWith("thread-"));
     const first=!firstTags.has(tag);
     if(first) firstTags.add(tag);
@@ -87,9 +101,15 @@ const server = createServer(async (request, response) => {
     const msg=payload.messages??[];
     const diag=new Set();
     const compactCalls=[];
+    const runtimeListingIds = new Set();
     for(const m of msg){
       for(const call of m.tool_calls??[]){
         if(["compact_start","compact_status"].includes(call.function?.name))compactCalls.push(call.id);
+        const input = String(call.function?.arguments ?? "");
+        if (call.function?.name === "exec" && /\bls\b/.test(input) &&
+            /(?:-\w*R\w*|--recursive)\b/.test(input) && /\/opt(?:\/|\b)/.test(input)) {
+          runtimeListingIds.add(call.id);
+        }
         if(/best-agent-evidence\.jsonl|\/logs\/agent/.test(String(call.function?.arguments)))diag.add(call.id);
       }
     }
@@ -107,6 +127,9 @@ const server = createServer(async (request, response) => {
       output_cap:payload.max_tokens ?? payload.max_completion_tokens,
       request_tool_count:selectedTools.length,
       request_tool_digest:digest(selectedTools),
+      original_tool_digest:originalToolDigest,directory_guidance_applied:directoryGuidanceApplied,
+      runtime_listing_receipts:msg.filter(m=>m.role==="tool" && runtimeListingIds.has(m.tool_call_id))
+        .map(m=>({id:m.tool_call_id,bytes:Buffer.byteLength(String(m.content))})),
       self_diagnostic_call_ids:[...diag],
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
       ...(first?{tool_count:selectedTools.length,tool_digest:digest(selectedTools),core_tool_digest:digest(coreTools),

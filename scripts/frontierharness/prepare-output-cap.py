@@ -21,11 +21,11 @@ replace_once(
     apiKey: selectedApiKey,""",
 )
 
-guidance = Path(__file__).with_name("focused-verification.txt").read_text().strip()
+guidance = Path(__file__).with_name("public-negative-control.txt").read_text().strip()
 replace_once(
     "v3-prompt-composition.ts",
     "          ? HEADLESS_BEHAVIOR_INSTRUCTION_TEXT",
-    """          ? process.env.BEST_AGENT_FH_FOCUSED_VERIFICATION === "1"
+    """          ? process.env.BEST_AGENT_FH_PUBLIC_NEGATIVE_CONTROL === "1"
             ? HEADLESS_BEHAVIOR_INSTRUCTION_TEXT + """ + json.dumps(" " + guidance) + """
             : HEADLESS_BEHAVIOR_INSTRUCTION_TEXT""",
 )

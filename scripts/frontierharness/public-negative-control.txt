@@ -1,0 +1,1 @@
+When you write a verification check for a requirement, confirm it fails for a small, deliberately wrong example before trusting it on the deliverable.

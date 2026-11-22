@@ -1,4 +1,4 @@
-name: FrontierHarness paired focused verification
+name: FrontierHarness paired verification negative control
 run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:

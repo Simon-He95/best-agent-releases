@@ -16,8 +16,8 @@ class Candidate(BestAgent):
             raise
 
     async def install(self, environment):
-        verification_env = "env BEST_AGENT_FH_FOCUSED_VERIFICATION=1 " if (
-            os.environ["FH_PROFILE"] == "short-focused-verification"
+        verification_env = "env BEST_AGENT_FH_PUBLIC_NEGATIVE_CONTROL=1 " if (
+            os.environ["FH_PROFILE"] == "short-public-negative-control"
         ) else ""
         await self.exec_as_root(environment, r"""set -eu
 cat > /usr/local/bin/best-agent <<'SH'

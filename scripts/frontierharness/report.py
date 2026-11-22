@@ -9,7 +9,7 @@ from pathlib import Path
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
 arm = profile["profile"]
-assert arm in ("short", "short-private-evidence")
+assert arm in ("short-readonly-audit", "short-readonly-audit-private-evidence")
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -48,7 +48,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     observed_completed_operations = set()
     root_thread_tool_entries = 0
     mounted_trace = path.parent / "agent/best-agent-evidence.jsonl"
-    private = arm == "short-private-evidence"
+    private = arm == "short-readonly-audit-private-evidence"
     trace = (root / "raw/private-evidence" / path.parent.name / mounted_trace.name
              if private else mounted_trace)
     if private and requests:

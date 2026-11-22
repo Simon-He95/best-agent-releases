@@ -189,7 +189,7 @@ const server = createServer(async (request, response) => {
   }
 });
 server.listen(0, "0.0.0.0", () => console.log(server.address().port));
-if (process.env.FH_PROFILE === "short-private-evidence") {
+if (process.env.FH_PROFILE === "short-readonly-audit-private-evidence") {
   const evidence = createServer({ requestTimeout: 0 }, async (request, response) => {
     const route = request.url?.match(/^\/([a-zA-Z0-9][a-zA-Z0-9_.-]*)\/attempt-evidence$/);
     if (request.method !== "POST" || !route) {

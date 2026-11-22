@@ -27,7 +27,7 @@ export PATH
 __CI_EVIDENCE_ENV__
 if [ "$1" = run ]; then
   shift
-  exec /opt/best-agent/bin/best-agent run --process-close-policy release "$@"
+  exec env BEST_AGENT_FH_READONLY_AUDIT=1 /opt/best-agent/bin/best-agent run --process-close-policy release "$@"
 fi
 exec /opt/best-agent/bin/best-agent "$@"
 SH

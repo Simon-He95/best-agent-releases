@@ -1,4 +1,4 @@
-name: FrontierHarness paired diagnostic isolation
+name: FrontierHarness read-only audit with diagnostic isolation
 run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:
@@ -83,7 +83,7 @@ jobs:
           "$RUNNER_TEMP/frontier/venv/bin/pip" install 'harbor==0.14.0'
           corepack enable
       - id: build
-        name: Build the pinned short bundle once
+        name: Build the pinned audit bundle once
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
         run: |

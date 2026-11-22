@@ -24,7 +24,7 @@ for _ in {1..50}; do
   sleep .1
 done
 export FH_PORT=$(cat "$FH_ROOT/raw/port")
-if [ "$FH_PROFILE" = short-private-evidence ]; then
+if [ "$FH_PROFILE" = short-readonly-audit-private-evidence ]; then
   for _ in {1..50}; do
     test ! -s "$FH_ROOT/raw/evidence-port" || break
     kill -0 "$relay"

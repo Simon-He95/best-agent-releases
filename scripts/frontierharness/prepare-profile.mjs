@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const folder = dirname(fileURLToPath(import.meta.url));
 const profile = process.env.FH_PROFILE;
-if (!["short", "short-readonly-audit"].includes(profile)) throw new Error("Unknown profile");
+if (!["short", "short-focused-verification"].includes(profile)) throw new Error("Unknown profile");
 const baseline = readFileSync(join(folder, "short.txt"), "utf8").trim();
-const guidance = readFileSync(join(folder, "readonly-audit.txt"), "utf8").trim();
-const instruction = profile === "short-readonly-audit" ? baseline + " " + guidance : baseline;
+const guidance = readFileSync(join(folder, "focused-verification.txt"), "utf8").trim();
+const instruction = profile === "short-focused-verification" ? baseline + " " + guidance : baseline;
 const path = join(process.env.FH_ROOT, "runtime/lib/node_modules/@best-agent/cli/dist/index.js");
 const bundle = readFileSync(path, "utf8");
 const needle = JSON.stringify(baseline);

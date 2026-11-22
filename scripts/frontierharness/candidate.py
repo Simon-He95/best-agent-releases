@@ -16,8 +16,8 @@ class Candidate(BestAgent):
             raise
 
     async def install(self, environment):
-        audit_env = "env BEST_AGENT_FH_READONLY_AUDIT=1 " if (
-            os.environ["FH_PROFILE"] == "short-readonly-audit"
+        verification_env = "env BEST_AGENT_FH_FOCUSED_VERIFICATION=1 " if (
+            os.environ["FH_PROFILE"] == "short-focused-verification"
         ) else ""
         await self.exec_as_root(environment, r"""set -eu
 cat > /usr/local/bin/best-agent <<'SH'
@@ -26,7 +26,7 @@ PATH="/opt/best-agent/bin:$PATH"
 export PATH
 if [ "$1" = run ]; then
   shift
-  exec """ + audit_env + r"""/opt/best-agent/bin/best-agent run --process-close-policy release "$@"
+  exec """ + verification_env + r"""/opt/best-agent/bin/best-agent run --process-close-policy release "$@"
 fi
 exec /opt/best-agent/bin/best-agent "$@"
 SH

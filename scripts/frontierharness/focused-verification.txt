@@ -1,0 +1,1 @@
+If your current verification could pass despite violating a specific acceptance condition, run one focused check through the real entry point that would expose that failure.

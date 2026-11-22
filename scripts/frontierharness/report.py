@@ -39,9 +39,10 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         assert first["reasoning_effort"] == "max"
         assert first["output_cap"] == 131072
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
+        assert first["exec_tool_present"]
         assert first["directory_guidance_applied"] == (arm == "short-exec-shallow-listing")
         assert all(r["directory_guidance_applied"] == (arm == "short-exec-shallow-listing")
-                   for r in requests if r["request_tool_count"])
+                   for r in requests if r["exec_tool_present"])
     failures_by_run = {}
     terminal_runs = []
     terminal = None

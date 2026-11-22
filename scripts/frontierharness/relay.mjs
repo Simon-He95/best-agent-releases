@@ -128,6 +128,7 @@ const server = createServer(async (request, response) => {
       request_tool_count:selectedTools.length,
       request_tool_digest:digest(selectedTools),
       original_tool_digest:originalToolDigest,directory_guidance_applied:directoryGuidanceApplied,
+      exec_tool_present:!!execTool,
       runtime_listing_receipts:msg.filter(m=>m.role==="tool" && runtimeListingIds.has(m.tool_call_id))
         .map(m=>({id:m.tool_call_id,bytes:Buffer.byteLength(String(m.content))})),
       self_diagnostic_call_ids:[...diag],

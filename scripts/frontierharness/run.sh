@@ -35,12 +35,3 @@ d=json.loads((Path(os.environ["FH_ROOT"])/"raw/preflight.json").read_text())
 assert d.get("choices") and d.get("usage"), "Missing authenticated model response or usage"
 CHECK
 printf 'Dim OAuth authenticated model preflight passed\n'
-"$FH_ROOT/venv/bin/python" "$script_root/prepare-tasks.py" >"$FH_ROOT/raw/prepare-tasks.log" 2>&1
-mounts=$(python3 -c 'import json,os,sys;print(json.dumps([dict(type="bind",source=os.path.realpath(sys.argv[1]),target="/opt/best-agent",read_only=True)]))' "$FH_ROOT/runtime")
-result=0
-"$FH_ROOT/venv/bin/harbor" run -c "$FH_ROOT/raw/job-config.json" -e docker -k 1 -n 1 -y \
-  --agent-import-path candidate:Candidate --model openai/deepseek-v4.1-flash \
-  --ak base_instructions=true --ak api_key_env=FH_OAUTH_REPRO_PROXY_KEY \
-  --jobs-dir "$FH_ROOT/raw/jobs" --mounts "$mounts" >"$FH_ROOT/raw/harbor.log" 2>&1 || result=$?
-"$FH_ROOT/venv/bin/python" "$script_root/report.py"
-exit "$result"

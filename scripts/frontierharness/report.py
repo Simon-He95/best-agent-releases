@@ -8,7 +8,7 @@ from pathlib import Path
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
 arm = profile["profile"]
-assert arm in ("short", "short-exec-shallow-listing")
+assert arm in ("short", "short-runtime-alias")
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -39,10 +39,6 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         assert first["reasoning_effort"] == "max"
         assert first["output_cap"] == 131072
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
-        assert first["exec_tool_present"]
-        assert first["directory_guidance_applied"] == (arm == "short-exec-shallow-listing")
-        assert all(r["directory_guidance_applied"] == (arm == "short-exec-shallow-listing")
-                   for r in requests if r["exec_tool_present"])
     failures_by_run = {}
     terminal_runs = []
     terminal = None
@@ -155,7 +151,6 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "output_tokens": sum(v.get("completion_tokens", 0) for v in receipts),
         "model_requests": len(requests), "requests_with_usage": len(receipts),
         "tool_digest": requests[0].get("tool_digest") if requests else None,
-        "original_tool_digest": requests[0].get("original_tool_digest") if requests else None,
         "runtime_listing_receipts": len(listing_receipts),
         "runtime_listing_receipt_bytes": sum(listing_receipts.values()),
         "requests_with_runtime_listing": sum(bool(r["runtime_listing_receipts"]) for r in requests),

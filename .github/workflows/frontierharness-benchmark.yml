@@ -1,4 +1,4 @@
-name: FrontierHarness paired exec directory guidance
+name: FrontierHarness paired runtime mount layout
 run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:

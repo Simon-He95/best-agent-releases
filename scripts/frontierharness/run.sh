@@ -36,7 +36,11 @@ assert d.get("choices") and d.get("usage"), "Missing authenticated model respons
 CHECK
 printf 'Dim OAuth authenticated model preflight passed\n'
 "$FH_ROOT/venv/bin/python" "$script_root/prepare-tasks.py" >"$FH_ROOT/raw/prepare-tasks.log" 2>&1
-mounts=$(python3 -c 'import json,os,sys;print(json.dumps([dict(type="bind",source=os.path.realpath(sys.argv[1]),target="/opt/best-agent",read_only=True)]))' "$FH_ROOT/runtime")
+runtime_target=/opt/best-agent
+if [ "$FH_PROFILE" = short-runtime-alias ]; then
+  runtime_target=/var/lib/best-agent-runtime
+fi
+mounts=$(python3 -c 'import json,os,sys;print(json.dumps([dict(type="bind",source=os.path.realpath(sys.argv[1]),target=sys.argv[2],read_only=True)]))' "$FH_ROOT/runtime" "$runtime_target")
 result=0
 "$FH_ROOT/venv/bin/harbor" run -c "$FH_ROOT/raw/job-config.json" -e docker -k 1 -n 1 -y \
   --agent-import-path candidate:Candidate --model openai/deepseek-v4.1-flash \

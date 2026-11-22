@@ -16,8 +16,10 @@ class Candidate(BestAgent):
             raise
 
     async def install(self, environment):
-        await self.exec_as_root(environment, r"""set -eu
-cat > /usr/local/bin/best-agent <<'SH'
+        alias_runtime = "mkdir -p /opt\nln -sT /var/lib/best-agent-runtime /opt/best-agent\n" if (
+            os.environ["FH_PROFILE"] == "short-runtime-alias"
+        ) else ""
+        await self.exec_as_root(environment, "set -eu\n" + alias_runtime + r"""cat > /usr/local/bin/best-agent <<'SH'
 #!/bin/sh
 PATH="/opt/best-agent/bin:$PATH"
 export PATH
@@ -28,7 +30,12 @@ fi
 exec /opt/best-agent/bin/best-agent "$@"
 SH
 chmod 0755 /usr/local/bin/best-agent
-best-agent --version
+/usr/local/bin/best-agent --version
+PATH="/opt/best-agent/bin:$PATH"
+export PATH
+node --version
+npm --version
+pnpm --version
 """)
 
     async def _upload_provider_config(self, environment, provider, model_id):

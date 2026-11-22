@@ -3,12 +3,13 @@ import json
 import os
 from collections import defaultdict
 from datetime import datetime
+from hashlib import sha256
 from pathlib import Path
 
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
 arm = profile["profile"]
-assert arm in ("short", "short-readonly-audit")
+assert arm in ("short", "short-private-evidence")
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -46,9 +47,27 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     root_subagent_results = 0
     observed_completed_operations = set()
     root_thread_tool_entries = 0
-    trace = path.parent / "agent/best-agent-evidence.jsonl"
+    mounted_trace = path.parent / "agent/best-agent-evidence.jsonl"
+    private = arm == "short-private-evidence"
+    trace = (root / "raw/private-evidence" / path.parent.name / mounted_trace.name
+             if private else mounted_trace)
+    if private and requests:
+        assert not mounted_trace.exists(), "Evidence remained visible in the task log mount"
+        assert trace.is_file(), "Runner-side evidence is missing"
+    prefix = sha256()
+    evidence_status = None
     if trace.exists():
         for line in trace.open("rb"):
+            if private:
+                if not line.endswith(b"\n"):
+                    evidence_status = "partial"
+                    break
+                if b'"type":"footer"' in line[:100]:
+                    footer = json.loads(line)
+                    assert footer["prefixSha256"] == prefix.hexdigest(), "Evidence stream hash mismatch"
+                    evidence_status = "complete" if footer["complete"] else "sealed-incomplete"
+                else:
+                    prefix.update(line)
             if not any(marker in line[:130] for marker in (
                 b'"type":"header"', b'"type":"model-failure-diagnostic"',
                 b'"type":"terminal-snapshot"', b'"type":"tool-entry"',
@@ -80,6 +99,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
                 root_subagent_starts += 1
             elif event["type"] == "tool-entry" and event["bindingRef"].startswith("best-agent/cli/thread-"):
                 root_thread_tool_entries += 1
+    if private and trace.exists() and evidence_status is None:
+        evidence_status = "partial"
     source_failure = failures_by_run.get(terminal_runs[-1][0]) if terminal_runs else None
     exception = (result.get("exception_info") or {}).get("exception_type")
     reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
@@ -138,6 +159,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "last_upstream_status": last_status,
         "reward": reward, "exception": exception, "source_failure": source_failure,
         "terminal": terminal, "checksum": result["task_checksum"],
+        "evidence_status": evidence_status,
+        "evidence_bytes": trace.stat().st_size if trace.exists() else 0,
         "agent_seconds": seconds(result.get("agent_execution")),
         "verifier_seconds": seconds(result.get("verifier")),
         "input_tokens": sum(v.get("prompt_tokens", 0) for v in receipts),

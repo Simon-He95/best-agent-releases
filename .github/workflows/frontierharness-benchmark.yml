@@ -1,4 +1,4 @@
-name: FrontierHarness headless read-only audit comparison
+name: FrontierHarness paired diagnostic isolation
 run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:

@@ -16,23 +16,26 @@ class Candidate(BestAgent):
             raise
 
     async def install(self, environment):
-        audit_env = "env BEST_AGENT_FH_READONLY_AUDIT=1 " if (
-            os.environ["FH_PROFILE"] == "short-readonly-audit"
-        ) else ""
-        await self.exec_as_root(environment, r"""set -eu
+        evidence_port = os.environ.get("FH_EVIDENCE_PORT", "")
+        if evidence_port:
+            assert evidence_port.isdecimal() and 0 < int(evidence_port) <= 65535
+        script = r"""set -eu
 cat > /usr/local/bin/best-agent <<'SH'
 #!/bin/sh
 PATH="/opt/best-agent/bin:$PATH"
 export PATH
+__CI_EVIDENCE_ENV__
 if [ "$1" = run ]; then
   shift
-  exec """ + audit_env + r"""/opt/best-agent/bin/best-agent run --process-close-policy release "$@"
+  exec /opt/best-agent/bin/best-agent run --process-close-policy release "$@"
 fi
 exec /opt/best-agent/bin/best-agent "$@"
 SH
 chmod 0755 /usr/local/bin/best-agent
 best-agent --version
-""")
+"""
+        evidence_env = f"export FH_EVIDENCE_PORT={evidence_port}" if evidence_port else ""
+        await self.exec_as_root(environment, script.replace("__CI_EVIDENCE_ENV__", evidence_env))
 
     async def _upload_provider_config(self, environment, provider, model_id):
         route = await self.exec_as_agent(environment, r"""/opt/best-agent/bin/node -e '

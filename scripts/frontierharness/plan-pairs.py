@@ -9,7 +9,7 @@ if not selected or len(selected) != len(set(selected)) or not set(selected) <= c
 matrix = []
 reverse_order = os.environ.get("FH_REVERSE_ORDER") == "true"
 for index, task in enumerate(selected):
-    profiles = ["short", "short-readonly-audit"]
+    profiles = ["short-readonly-audit", "short-readonly-audit-conditional-wait"]
     if (index % 2 == 1) != reverse_order:
         profiles.reverse()
     matrix.append({"task": task, "first": profiles[0], "second": profiles[1]})

@@ -22,10 +22,13 @@ replace_once(
 )
 
 guidance = Path(__file__).with_name("readonly-audit.txt").read_text().strip()
+conditional = Path(__file__).with_name("readonly-audit-conditional-wait.txt").read_text().strip()
 replace_once(
     "v3-prompt-composition.ts",
     "          ? HEADLESS_BEHAVIOR_INSTRUCTION_TEXT",
-    """          ? process.env.BEST_AGENT_FH_READONLY_AUDIT === "1"
-            ? HEADLESS_BEHAVIOR_INSTRUCTION_TEXT + """ + json.dumps(" " + guidance) + """
-            : HEADLESS_BEHAVIOR_INSTRUCTION_TEXT""",
+    """          ? process.env.BEST_AGENT_FH_READONLY_AUDIT === "conditional"
+            ? HEADLESS_BEHAVIOR_INSTRUCTION_TEXT + """ + json.dumps(" " + conditional) + """
+            : process.env.BEST_AGENT_FH_READONLY_AUDIT === "1"
+              ? HEADLESS_BEHAVIOR_INSTRUCTION_TEXT + """ + json.dumps(" " + guidance) + """
+              : HEADLESS_BEHAVIOR_INSTRUCTION_TEXT""",
 )

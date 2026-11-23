@@ -1,4 +1,4 @@
-name: FrontierHarness v1.1 exec stream budget pair
+name: FrontierHarness v1.1 independent background jobs pair
 run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:
@@ -13,7 +13,7 @@ on:
         required: true
         type: string
       tasks:
-        description: Comma-separated subset of the v1.1 exec stream budget pilot
+        description: Comma-separated subset of the v1.1 independent jobs pilot
         required: false
         type: string
         default: ""

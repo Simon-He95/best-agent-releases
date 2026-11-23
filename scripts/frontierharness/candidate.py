@@ -4,7 +4,7 @@ from pathlib import Path
 
 from benchmarks.frontierharness.agents.best_agent import BestAgent
 
-CANDIDATE_PROFILE = "short-exec-stream-budget"
+CANDIDATE_PROFILE = "short-independent-jobs"
 
 
 class Candidate(BestAgent):
@@ -12,7 +12,7 @@ class Candidate(BestAgent):
         # One bundle, two arms: only the candidate arm's wrapper exports the switch that selects
         # the narrower exec stream bound, so the pair differs by exactly that one behavior.
         arm_env = (
-            "env BEST_AGENT_BENCHMARK_EXEC_STREAM_BUDGET=1 "
+            "env BEST_AGENT_BENCHMARK_INDEPENDENT_JOBS=1 "
             if os.environ["FH_PROFILE"] == CANDIDATE_PROFILE
             else ""
         )

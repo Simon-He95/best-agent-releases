@@ -4,12 +4,13 @@ mkdir -p "$FH_ROOT/packed" "$FH_ROOT/runtime/bin"
 cp "$(realpath "$(command -v node)")" "$FH_ROOT/runtime/bin/node"
 npm install --global --prefix "$FH_ROOT/runtime" --no-fund --no-audit npm@11.19.1 pnpm@10.34.9
 python3 scripts/frontierharness/prepare-output-cap.py
-python3 scripts/frontierharness/prepare-exec-stream-budget.py
+python3 scripts/frontierharness/prepare-independent-jobs.py
 cd source
 corepack install
 pnpm install --frozen-lockfile
 node scripts/pack-cli-node.mjs "$FH_ROOT/packed"
 npm install --global --prefix "$FH_ROOT/runtime" --no-fund --no-audit "$FH_ROOT"/packed/*.tgz
+cp "$FH_ROOT/runtime/lib/node_modules/@best-agent/cli/dist/index.js" "$FH_ROOT/runtime/pristine-index.js"
 PATH="$FH_ROOT/runtime/bin:$PATH" "$FH_ROOT/runtime/bin/best-agent" --version
 PATH="$FH_ROOT/runtime/bin:$PATH" "$FH_ROOT/runtime/bin/npm" --version
 PATH="$FH_ROOT/runtime/bin:$PATH" "$FH_ROOT/runtime/bin/npx" --version

@@ -8,7 +8,7 @@ from pathlib import Path
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
 arm = profile["profile"]
-assert arm in ("short", "short-exec-stream-budget")
+assert arm in ("short", "short-effort-high")
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -35,7 +35,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         first = requests[0]
         assert first["model"] == "deepseek-v4.1-flash"
         assert first["tool_count"] == 31 and first["deadline"] is False
-        assert first["reasoning_effort"] == "max"
+        expected_effort = "high" if arm == "short-effort-high" else "max"
+        assert first["forwarded_effort"] == expected_effort, (arm, first["forwarded_effort"])
         assert first["output_cap"] == 131072
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
     failures_by_run = {}

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from benchmarks.frontierharness.agents.best_agent import BestAgent
 
-CANDIDATE_PROFILE = "short-exec-stream-budget"
+CANDIDATE_PROFILE = "short-effort-high"
 
 
 class Candidate(BestAgent):

@@ -83,6 +83,18 @@ const server = createServer(async (request, response) => {
       response.writeHead(400).end();
       return;
     }
+    // One arm lowers the whole-run reasoning effort; the other forwards what the CLI chose (max).
+    // The measured reason to try the untested side: 63% of turns slower than 30 s happen *after*
+    // the first file write, while the earlier effort experiment lowered effort only before it.
+    const effortArm = process.env.FH_PROFILE === "short-effort-high";
+    if (effortArm && payload.reasoning_effort !== "high") {
+      payload.reasoning_effort = "high";
+      body = Buffer.from(JSON.stringify(payload));
+      if (body.length > maxRequestBytes) {
+        response.writeHead(413).end();
+        return;
+      }
+    }
     const selectedTools = payload.tools ?? [];
     const originalToolDigest = digest(selectedTools);
     const execTool = selectedTools.find(spec => spec.function?.name === "exec");
@@ -132,7 +144,7 @@ const server = createServer(async (request, response) => {
       self_diagnostic_call_ids:[...diag],
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
       ...(first?{tool_count:selectedTools.length,tool_digest:digest(selectedTools),core_tool_digest:digest(coreTools),
-         system_count:system.length,reasoning_effort:payload.reasoning_effort,
+         system_count:system.length,forwarded_effort:payload.reasoning_effort,
          baseline_first_instruction:digest(system[0] ?? null),deadline:system.some(x=>String(x).includes("Run deadline (UTC)"))}:{})});
     const credential = { access: session.access };
     const upstream = await new Promise((resolve, reject) => {

@@ -22,7 +22,14 @@ regression = {
     "sam-cell-seg",
 }
 
-allowed = pilot | regression
+# Verifier already 1.0 but killed by the task timeout, with most of the budget in model time:
+# lower effort is the only lever that can convert them.
+convertible = {
+    "dna-insert",
+    "tune-mjcf",
+}
+
+allowed = pilot | regression | convertible
 candidate_first = {"adaptive-rejection-sampler"}
 selected = [entry.strip() for entry in os.environ.get("FH_TASKS", "").split(",") if entry.strip()]
 if not selected:

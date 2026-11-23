@@ -20,6 +20,14 @@ regression = {
     "circuit-fibsqrt",
     "mvcc-lsm-compaction",
     "sam-cell-seg",
+    # Next tier by longest single-turn reasoning among archived passes. The default change only
+    # shortens very long turns, so these bound its blast radius without running the whole board.
+    "chess-best-move",
+    "sqlite-with-gcov",
+    "code-from-image",
+    "intrastat-meldung",
+    "portfolio-optimization",
+    "polyglot-c-py",
 }
 
 # Verifier already 1.0 but killed by the task timeout, with most of the budget in model time:

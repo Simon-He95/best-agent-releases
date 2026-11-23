@@ -43,7 +43,9 @@ scope = os.environ.get("FH_SCOPE", "pilot")
 if scope == "board":
     cohort = Path(__file__).with_name("cohort57.txt").read_text().splitlines()
     allowed = {name.strip() for name in cohort if name.strip()}
-arms = [arm.strip() for arm in os.environ.get("FH_ARMS", "short,short-effort-high").split(",") if arm.strip()]
+second = os.environ.get("FH_SECOND", "short-effort-high")
+default_arms = "short" if second == "none" else f"short,{second}"
+arms = [arm.strip() for arm in os.environ.get("FH_ARMS", default_arms).split(",") if arm.strip()]
 if not arms or any(arm not in ("short", "short-effort-high") for arm in arms):
     raise SystemExit("FH_ARMS must list short and/or short-effort-high")
 selected = [entry.strip() for entry in os.environ.get("FH_TASKS", "").split(",") if entry.strip()]

@@ -22,6 +22,11 @@ on:
         required: false
         type: boolean
         default: false
+      second_profile:
+        description: Second arm; "none" runs the first arm only (board screen)
+        required: false
+        type: string
+        default: short-effort-high
       label:
         description: Unique run label
         required: false
@@ -50,6 +55,7 @@ jobs:
         env:
           FH_TASKS: ${{ inputs.tasks }}
           FH_REVERSE_ORDER: ${{ inputs.reverse_order }}
+          FH_SECOND: ${{ inputs.second_profile }}
         run: python3 scripts/frontierharness/plan-pairs.py
 
   benchmark:
@@ -145,7 +151,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
       - name: Run Dim OAuth (${{ matrix.second }})
-        if: always() && steps.build.outcome == 'success'
+        if: always() && steps.build.outcome == 'success' && matrix.second != ''
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
           FH_DIM_OAUTH_SESSION: ${{ secrets.FH_DIM_OAUTH_SESSION }}
@@ -159,7 +165,7 @@ jobs:
           node scripts/frontierharness/prepare-profile.mjs >"$FH_ROOT/raw/profile.log" 2>&1
           bash scripts/frontierharness/run.sh
       - name: Preserve the task score (${{ matrix.second }})
-        if: always() && steps.build.outcome == 'success'
+        if: always() && steps.build.outcome == 'success' && matrix.second != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: score-${{ matrix.second }}-${{ matrix.task }}
@@ -170,13 +176,13 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
       - name: Encrypt raw diagnostics (${{ matrix.second }})
-        if: always() && steps.build.outcome == 'success'
+        if: always() && steps.build.outcome == 'success' && matrix.second != ''
         env:
           RECIPIENT_KEY: ${{ inputs.recipient_key }}
           FH_ROOT: ${{ runner.temp }}/frontier-${{ matrix.second }}
         run: tar -C "$FH_ROOT" -czf - raw | age --encrypt --recipient "$RECIPIENT_KEY" -o "$FH_ROOT/report/diagnostics.tar.gz.age"
       - name: Preserve encrypted diagnostics (${{ matrix.second }})
-        if: always() && steps.build.outcome == 'success'
+        if: always() && steps.build.outcome == 'success' && matrix.second != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: diagnostics-${{ matrix.second }}-${{ matrix.task }}

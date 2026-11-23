@@ -83,12 +83,15 @@ const server = createServer(async (request, response) => {
       response.writeHead(400).end();
       return;
     }
-    // One arm lowers the whole-run reasoning effort; the other forwards what the CLI chose (max).
-    // The measured reason to try the untested side: 63% of turns slower than 30 s happen *after*
-    // the first file write, while the earlier effort experiment lowered effort only before it.
-    const effortArm = process.env.FH_PROFILE === "short-effort-high";
-    if (effortArm && payload.reasoning_effort !== "high") {
-      payload.reasoning_effort = "high";
+    // The pair differs only by the wire reasoning_effort. Force both values so the comparison holds
+    // whichever default the tested commit carries: the control is the pre-change max, the candidate
+    // the adapter's high.
+    const effort =
+      process.env.FH_PROFILE === "short-effort-high" ? "high"
+      : process.env.FH_PROFILE === "short" ? "max"
+      : undefined;
+    if (effort !== undefined && payload.reasoning_effort !== effort) {
+      payload.reasoning_effort = effort;
       body = Buffer.from(JSON.stringify(payload));
       if (body.length > maxRequestBytes) {
         response.writeHead(413).end();

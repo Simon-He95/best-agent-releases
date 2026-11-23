@@ -34,7 +34,12 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     if requests:
         first = requests[0]
         assert first["model"] == "deepseek-v4.1-flash"
-        assert first["tool_count"] == 31 and first["deadline"] is False
+        # One surface per arm: the baseline 31 tools, or those plus the two compact bindings the
+        # selected one-shot compact owner contributes. Any other count means the pair is not the
+        # comparison it claims to be, so the arm is refused instead of scored.
+        expected_tools = 33 if arm == "short-compact-owner" else 31
+        assert first["tool_count"] == expected_tools, (arm, first["tool_count"])
+        assert first["deadline"] is False
         assert first["reasoning_effort"] == "max"
         assert first["output_cap"] == 131072
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
@@ -122,6 +127,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "tool_digest": requests[0].get("tool_digest") if requests else None,
         "core_tool_digest": requests[0].get("core_tool_digest") if requests else None,
         "system_count": requests[0].get("system_count") if requests else None,
+        "tool_count": requests[0].get("tool_count") if requests else None,
+        "folded_requests": sum(bool(v.get("compact_context")) for v in requests),
         "checks_passed": checks.get("passed"), "checks_total": checks.get("tests"),
     })
 if not rows:

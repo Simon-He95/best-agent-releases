@@ -4,15 +4,16 @@ from pathlib import Path
 
 from benchmarks.frontierharness.agents.best_agent import BestAgent
 
-CANDIDATE_PROFILE = "short-exec-stream-budget"
+CANDIDATE_PROFILE = "short-unknown-command-admitted"
 
 
 class Candidate(BestAgent):
     async def install(self, environment):
-        # One bundle, two arms: only the candidate arm's wrapper exports the switch that selects
-        # the narrower exec stream bound, so the pair differs by exactly that one behavior.
+        # One bundle, two arms: only the candidate arm's wrapper exports the switch that makes an
+        # unknown-command receipt name the admitted argv[0] domain, so the pair differs by exactly
+        # that one behavior.
         arm_env = (
-            "env BEST_AGENT_BENCHMARK_EXEC_STREAM_BUDGET=1 "
+            "env BEST_AGENT_BENCHMARK_UNKNOWN_COMMAND_ADMITTED=1 "
             if os.environ["FH_PROFILE"] == CANDIDATE_PROFILE
             else ""
         )

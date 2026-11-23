@@ -31,19 +31,30 @@ convertible = {
 
 allowed = pilot | regression | convertible
 candidate_first = {"adaptive-rejection-sampler"}
+scope = os.environ.get("FH_SCOPE", "pilot")
+if scope == "board":
+    cohort = Path(__file__).with_name("cohort57.txt").read_text().splitlines()
+    allowed = {name.strip() for name in cohort if name.strip()}
+arms = [arm.strip() for arm in os.environ.get("FH_ARMS", "short,short-effort-high").split(",") if arm.strip()]
+if not arms or any(arm not in ("short", "short-effort-high") for arm in arms):
+    raise SystemExit("FH_ARMS must list short and/or short-effort-high")
 selected = [entry.strip() for entry in os.environ.get("FH_TASKS", "").split(",") if entry.strip()]
 if not selected:
-    selected = sorted(pilot)
+    selected = sorted(allowed) if scope == "board" else sorted(pilot)
 if len(selected) != len(set(selected)) or not set(selected) <= allowed:
-    raise SystemExit("Select unique tasks from the effort pilot or the deep-reasoning regression cohort")
+    raise SystemExit("Select unique tasks from the allowed cohort")
 matrix = []
 for task in selected:
-    profiles = ["short", "short-effort-high"]
-    if task in candidate_first:
+    profiles = list(arms)
+    if len(profiles) == 2 and task in candidate_first:
         profiles.reverse()
     if os.environ.get("FH_REVERSE_ORDER") == "true":
         profiles.reverse()
-    matrix.append({"task": task, "first": profiles[0], "second": profiles[1]})
+    matrix.append({
+        "task": task,
+        "first": profiles[0],
+        "second": profiles[1] if len(profiles) > 1 else "",
+    })
 with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
     print("matrix=" + json.dumps({"include": matrix}, separators=(",", ":")), file=output)
-print(f"Scheduled {len(matrix)} same-runner pairs")
+print(f"Scheduled {len(matrix)} task arms")

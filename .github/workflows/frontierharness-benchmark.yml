@@ -1,4 +1,4 @@
-name: FrontierHarness paired exec directory guidance
+name: FrontierHarness paired exec script example
 run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
 on:
@@ -56,7 +56,7 @@ jobs:
     needs: plan
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 1
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 350

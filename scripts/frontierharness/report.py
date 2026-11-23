@@ -8,7 +8,7 @@ from pathlib import Path
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
 arm = profile["profile"]
-assert arm in ("short", "short-exec-shallow-listing")
+assert arm in ("short", "short-exec-script-example")
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -39,10 +39,10 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         assert first["reasoning_effort"] == "max"
         assert first["output_cap"] == 131072
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
-        assert first["exec_tool_present"]
-        assert first["directory_guidance_applied"] == (arm == "short-exec-shallow-listing")
-        assert all(r["directory_guidance_applied"] == (arm == "short-exec-shallow-listing")
-                   for r in requests if r["exec_tool_present"])
+        assert first["script_example_available"]
+        assert first["script_example_applied"] == (arm == "short-exec-script-example")
+        assert all(r["script_example_applied"] == (arm == "short-exec-script-example")
+                   for r in requests if r["script_example_available"])
     failures_by_run = {}
     terminal_runs = []
     terminal = None
@@ -50,15 +50,43 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     root_subagent_results = 0
     observed_completed_operations = set()
     root_thread_tool_entries = 0
+    root_exec_entries = 0
+    root_id = None
+    foreign_exec_rejections = set()
     trace = path.parent / "agent/best-agent-evidence.jsonl"
     if trace.exists():
         for line in trace.open("rb"):
-            if not any(marker in line[:130] for marker in (
+            if not line.endswith(b"\n"):
+                break
+            candidate_rejection_request = (
+                b'"type":"model-request"' in line[:130]
+                and b'"reason":"malformed-input"' in line
+                and b'"field":"argv"' in line
+            )
+            if not candidate_rejection_request and not any(marker in line[:130] for marker in (
                 b'"type":"header"', b'"type":"model-failure-diagnostic"',
                 b'"type":"terminal-snapshot"', b'"type":"tool-entry"',
             )):
                 continue
             event = json.loads(line)
+            if event["type"] == "header":
+                root_id = event["rootRunId"]
+                continue
+            if event["type"] == "model-request" and event["runId"] == root_id:
+                messages = event["request"]["messages"]
+                legacy_calls = {
+                    call["callId"]
+                    for message in messages if message["kind"] == "assistant"
+                    for call in message["message"].get("toolCalls", [])
+                    if call["name"] == "exec" and isinstance(call["input"], dict) and "command" in call["input"]
+                }
+                foreign_exec_rejections.update(
+                    message["result"]["callId"]
+                    for message in messages if message["kind"] == "tool"
+                    and message["result"]["callId"] in legacy_calls
+                    and message["result"]["closure"].get("reason") == "malformed-input"
+                    and message["result"]["closure"].get("issue", {}).get("field") == "argv"
+                )
             if event.get("runId") is None or event.get("resourceId") != event["runId"]:
                 continue
             if event["type"] == "model-failure-diagnostic":
@@ -84,6 +112,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
                 root_subagent_starts += 1
             elif event["type"] == "tool-entry" and event["bindingRef"].startswith("best-agent/cli/thread-"):
                 root_thread_tool_entries += 1
+            elif event["type"] == "tool-entry" and event["runId"] == root_id and event["bindingRef"] == "best-agent/builtin-tools/workspace-exec-v3":
+                root_exec_entries += 1
     source_failure = failures_by_run.get(terminal_runs[-1][0]) if terminal_runs else None
     exception = (result.get("exception_info") or {}).get("exception_type")
     reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
@@ -118,8 +148,6 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         if b"curl: (18)" in tail and b"uvx: command not found" in tail:
             outcome = "infra"
             exception = "VerifierBootstrapDownloadFailed"
-    listing_receipts = {receipt["id"]: receipt["bytes"] for r in requests
-                        for receipt in r["runtime_listing_receipts"]}
     rows.append({
         "task": result["task_name"], "profile": profile["profile"], "outcome": outcome,
         "arm": arm,
@@ -127,6 +155,8 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "root_subagent_results": root_subagent_results,
         "root_observed_completed_subagents": len(observed_completed_operations),
         "root_thread_tool_entries": root_thread_tool_entries,
+        "root_exec_entries": root_exec_entries,
+        "root_exec_foreign_command_missing_argv": len(foreign_exec_rejections),
         "initial_tool_count": requests[0].get("tool_count") if requests else None,
         "root_terminals": "|".join(terminal for _, terminal in terminal_runs),
         "compact_context_requests": sum(bool(v.get("compact_context")) for v in requests),
@@ -156,10 +186,6 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         "model_requests": len(requests), "requests_with_usage": len(receipts),
         "tool_digest": requests[0].get("tool_digest") if requests else None,
         "original_tool_digest": requests[0].get("original_tool_digest") if requests else None,
-        "runtime_listing_receipts": len(listing_receipts),
-        "runtime_listing_receipt_bytes": sum(listing_receipts.values()),
-        "requests_with_runtime_listing": sum(bool(r["runtime_listing_receipts"]) for r in requests),
-        "core_tool_digest": requests[0].get("core_tool_digest") if requests else None,
         "system_count": requests[0].get("system_count") if requests else None,
         "checks_passed": checks.get("passed"), "checks_total": checks.get("tests"),
     })

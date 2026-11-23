@@ -11,8 +11,9 @@ const marker = process.env.FH_OAUTH_REPRO_PROXY_KEY;
 const ledger = process.env.FH_LEDGER;
 const log = value => appendFileSync(ledger, JSON.stringify(value)+"\n",{mode:0o600});
 const cutoff = join(process.env.FH_AB_DIR, "cutoff");
-const directoryGuidance = " For directory discovery, start with a nonrecursive listing of the path you need.";
-const describeShallowListing = process.env.FH_PROFILE === "short-exec-shallow-listing";
+const scriptFormNote = "Use the separate script form only when the schema offers it.";
+const scriptExample = 'For shell text, send {"script":"pwd && ls"}.';
+const showScriptExample = process.env.FH_PROFILE === "short-exec-script-example";
 const maxRequestBytes = 8 * 1024 * 1024;
 let ordinal=0;
 const firstTags=new Set();
@@ -85,9 +86,14 @@ const server = createServer(async (request, response) => {
     const selectedTools = payload.tools ?? [];
     const originalToolDigest = digest(selectedTools);
     const execTool = selectedTools.find(spec => spec.function?.name === "exec");
-    const directoryGuidanceApplied = describeShallowListing && !!execTool;
-    if (directoryGuidanceApplied) {
-      execTool.function.description += directoryGuidance;
+    const parameters = execTool?.function?.parameters;
+    const schemaOffersScript = [parameters, ...(parameters?.anyOf ?? []), ...(parameters?.oneOf ?? [])]
+      .some(shape => shape?.properties?.script !== undefined);
+    const scriptExampleAvailable = schemaOffersScript &&
+      execTool.function.description.includes(scriptFormNote);
+    const scriptExampleApplied = showScriptExample && scriptExampleAvailable;
+    if (scriptExampleApplied) {
+      execTool.function.description = execTool.function.description.replace(scriptFormNote, scriptExample);
       body = Buffer.from(JSON.stringify(payload));
       if (body.length > maxRequestBytes) {
         response.writeHead(413).end();
@@ -101,15 +107,9 @@ const server = createServer(async (request, response) => {
     const msg=payload.messages??[];
     const diag=new Set();
     const compactCalls=[];
-    const runtimeListingIds = new Set();
     for(const m of msg){
       for(const call of m.tool_calls??[]){
         if(["compact_start","compact_status"].includes(call.function?.name))compactCalls.push(call.id);
-        const input = String(call.function?.arguments ?? "");
-        if (call.function?.name === "exec" && /\bls\b/.test(input) &&
-            /(?:-\w*R\w*|--recursive)\b/.test(input) && /\/opt(?:\/|\b)/.test(input)) {
-          runtimeListingIds.add(call.id);
-        }
         if(/best-agent-evidence\.jsonl|\/logs\/agent/.test(String(call.function?.arguments)))diag.add(call.id);
       }
     }
@@ -127,10 +127,8 @@ const server = createServer(async (request, response) => {
       output_cap:payload.max_tokens ?? payload.max_completion_tokens,
       request_tool_count:selectedTools.length,
       request_tool_digest:digest(selectedTools),
-      original_tool_digest:originalToolDigest,directory_guidance_applied:directoryGuidanceApplied,
-      exec_tool_present:!!execTool,
-      runtime_listing_receipts:msg.filter(m=>m.role==="tool" && runtimeListingIds.has(m.tool_call_id))
-        .map(m=>({id:m.tool_call_id,bytes:Buffer.byteLength(String(m.content))})),
+      original_tool_digest:originalToolDigest,
+      script_example_available:scriptExampleAvailable,script_example_applied:scriptExampleApplied,
       self_diagnostic_call_ids:[...diag],
       diagnostic_reply_bytes:diagReplies.reduce((sum,m)=>sum+Buffer.byteLength(String(m.content)),0),
       ...(first?{tool_count:selectedTools.length,tool_digest:digest(selectedTools),core_tool_digest:digest(coreTools),

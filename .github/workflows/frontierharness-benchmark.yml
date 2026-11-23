@@ -42,6 +42,11 @@ on:
         required: false
         type: string
         default: oauth57
+      max_parallel:
+        description: Task jobs to run at once
+        required: false
+        type: string
+        default: "4"
 
 permissions:
   contents: read
@@ -75,7 +80,7 @@ jobs:
     needs: plan
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: ${{ fromJSON(inputs.max_parallel) }}
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 350

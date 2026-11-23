@@ -4,13 +4,18 @@ from pathlib import Path
 
 from benchmarks.frontierharness.agents.best_agent import BestAgent
 
+CANDIDATE_PROFILE = "short-exec-stream-budget"
+
 
 class Candidate(BestAgent):
     async def install(self, environment):
-        compact = ' --compact-dir "$BEST_AGENT_STORAGE_ROOT/compact"' if (
-            os.environ["FH_PROFILE"] == "short-window-recovery"
-        ) else ""
-        recovery_env = "env BEST_AGENT_BENCHMARK_WINDOW_RECOVERY=1 " if compact else ""
+        # One bundle, two arms: only the candidate arm's wrapper exports the switch that selects
+        # the narrower exec stream bound, so the pair differs by exactly that one behavior.
+        arm_env = (
+            "env BEST_AGENT_BENCHMARK_EXEC_STREAM_BUDGET=1 "
+            if os.environ["FH_PROFILE"] == CANDIDATE_PROFILE
+            else ""
+        )
         await self.exec_as_root(environment, r"""set -eu
 cat > /usr/local/bin/best-agent <<'SH'
 #!/bin/sh
@@ -18,7 +23,7 @@ PATH="/opt/best-agent/bin:$PATH"
 export PATH
 if [ "$1" = run ]; then
   shift
-  exec """ + recovery_env + r"""/opt/best-agent/bin/best-agent run --process-close-policy release""" + compact + r""" "$@"
+  exec """ + arm_env + r"""/opt/best-agent/bin/best-agent run --process-close-policy release "$@"
 fi
 exec /opt/best-agent/bin/best-agent "$@"
 SH

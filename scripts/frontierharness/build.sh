@@ -10,6 +10,9 @@ corepack install
 pnpm install --frozen-lockfile
 node scripts/pack-cli-node.mjs "$FH_ROOT/packed"
 npm install --global --prefix "$FH_ROOT/runtime" --no-fund --no-audit "$FH_ROOT"/packed/*.tgz
+# Both arms share this runtime through a symlink, so the installed bundle is copied once here
+# and every arm starts from that copy instead of from whatever the previous arm left behind.
+cp "$FH_ROOT/runtime/lib/node_modules/@best-agent/cli/dist/index.js" "$FH_ROOT/runtime/pristine-index.js"
 PATH="$FH_ROOT/runtime/bin:$PATH" "$FH_ROOT/runtime/bin/best-agent" --version
 PATH="$FH_ROOT/runtime/bin:$PATH" "$FH_ROOT/runtime/bin/npm" --version
 PATH="$FH_ROOT/runtime/bin:$PATH" "$FH_ROOT/runtime/bin/npx" --version

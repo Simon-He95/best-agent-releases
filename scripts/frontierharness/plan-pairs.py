@@ -40,6 +40,8 @@ convertible = {
 allowed = pilot | regression | convertible
 candidate_first = {"adaptive-rejection-sampler"}
 scope = os.environ.get("FH_SCOPE", "pilot")
+if scope not in ("pilot", "board"):
+    raise SystemExit("FH_SCOPE must be pilot or board")
 if scope == "board":
     cohort = Path(__file__).with_name("cohort57.txt").read_text().splitlines()
     allowed = {name.strip() for name in cohort if name.strip()}

@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ""
+      scope:
+        description: Task scope, pilot or board (board allows all of cohort57)
+        required: false
+        type: string
+        default: pilot
       reverse_order:
         description: Reverse each pair for confirmation
         required: false
@@ -59,6 +64,7 @@ jobs:
         name: Plan the task pairs
         env:
           FH_TASKS: ${{ inputs.tasks }}
+          FH_SCOPE: ${{ inputs.scope }}
           FH_REVERSE_ORDER: ${{ inputs.reverse_order }}
           FH_FIRST: ${{ inputs.first_profile }}
           FH_SECOND: ${{ inputs.second_profile }}

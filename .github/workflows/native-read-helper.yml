@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: Exact private source candidate commit
+        description: Exact private candidate or npm verifier commit
         required: true
         type: string
       version:
@@ -15,6 +15,14 @@ on:
         type: choice
         default: sea
         options: [sea, rust]
+      producer_run_id:
+        description: Successful Rust verification run to reuse for Windows npm replay
+        required: false
+        type: string
+      producer_source_sha:
+        description: Exact Rust producer commit for the reused run
+        required: false
+        type: string
       measure_tui_cost:
         description: Run the fixed private paired TUI experiment on macOS ARM64
         required: false
@@ -46,7 +54,10 @@ jobs:
         env:
           REQUEST_SHA: ${{ inputs.source_sha }}
           REQUEST_VERSION: ${{ inputs.version }}
-        run: node -e 'require("fs").writeFileSync("build-request.json", JSON.stringify({sourceRepository:"Simon-He95/best-agent",sourceSha:process.env.REQUEST_SHA,version:process.env.REQUEST_VERSION})+"\n")'
+          PRODUCER_RUN_ID: ${{ inputs.producer_run_id }}
+          PRODUCER_SOURCE_SHA: ${{ inputs.producer_source_sha }}
+          ARTIFACT: ${{ inputs.artifact }}
+        run: node -e 'const e=process.env;if((e.PRODUCER_RUN_ID||e.PRODUCER_SOURCE_SHA)&&(e.ARTIFACT!=="rust"||!/^[1-9][0-9]{0,19}$/.test(e.PRODUCER_RUN_ID)||!/^[a-f0-9]{40}$/.test(e.PRODUCER_SOURCE_SHA)))throw Error("Rust npm replay requires the exact producer run and source");require("fs").writeFileSync("build-request.json", JSON.stringify({sourceRepository:"Simon-He95/best-agent",sourceSha:process.env.REQUEST_SHA,version:process.env.REQUEST_VERSION})+"\n")'
       - id: request
         run: node build.mjs request
       - run: node build.mjs prepare
@@ -55,6 +66,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
   build:
     needs: prepare
+    if: inputs.producer_run_id == ''
     permissions:
       contents: write
     strategy:
@@ -237,3 +249,105 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+
+  stage-rust-npm:
+    needs: prepare
+    if: inputs.artifact == 'rust' && inputs.producer_run_id != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: Simon-He95/best-agent
+          ref: ${{ needs.prepare.outputs.sha }}
+          ssh-key: ${{ secrets.SOURCE_SSH_KEY }}
+          persist-credentials: false
+          path: source
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: source/.nvmrc
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Stage npm packages from the exact encrypted Rust archives
+        run: node source/scripts/public-distribution/ci-rust-npm-replay.mjs stage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+          PRODUCER_RUN_ID: ${{ inputs.producer_run_id }}
+          PRODUCER_SOURCE_SHA: ${{ inputs.producer_source_sha }}
+          REQUEST_VERSION: ${{ inputs.version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-npm-windows-candidate
+          path: output/rust-npm-candidate/*.enc
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-npm-verification-stage
+          path: output/rust-npm-stage.log.enc
+          retention-days: 1
+          if-no-files-found: ignore
+
+  replay-rust-npm:
+    needs: [prepare, stage-rust-npm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: win32-arm64
+            arch: arm64
+            runner: windows-11-arm
+          - target: win32-x64
+            arch: x64
+            runner: windows-2025
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Write the exact verifier checkout request
+        env:
+          REQUEST_SHA: ${{ needs.prepare.outputs.sha }}
+          REQUEST_VERSION: ${{ inputs.version }}
+        run: node -e 'require("fs").writeFileSync("build-request.json", JSON.stringify({sourceRepository:"Simon-He95/best-agent",sourceSha:process.env.REQUEST_SHA,version:process.env.REQUEST_VERSION}))'
+      - name: Check out Windows verifier with a private-key ACL
+        run: node build.mjs checkout ${{ matrix.target }}
+        env:
+          SOURCE_SSH_KEY: ${{ secrets.SOURCE_SSH_KEY }}
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: source/.nvmrc
+          architecture: ${{ matrix.arch }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: rust-npm-windows-candidate
+          path: output/rust-npm-candidate
+      - name: Replay offline npm installation, aliases and ConPTY
+        run: node source/scripts/public-distribution/ci-rust-npm-replay.mjs replay ${{ matrix.target }}
+        env:
+          BUILD_ENCRYPTION_KEY: ${{ secrets.BUILD_ENCRYPTION_KEY }}
+          PRODUCER_RUN_ID: ${{ inputs.producer_run_id }}
+          PRODUCER_SOURCE_SHA: ${{ inputs.producer_source_sha }}
+          REQUEST_VERSION: ${{ inputs.version }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-npm-verification-${{ matrix.target }}
+          path: |
+            output/rust-npm-${{ matrix.target }}.receipt.enc
+            output/rust-npm-${{ matrix.target }}.log.enc
+            output/${{ matrix.target }}.log.enc
+          retention-days: 1
+          if-no-files-found: ignore

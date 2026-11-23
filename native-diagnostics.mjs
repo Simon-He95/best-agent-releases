@@ -21,11 +21,14 @@ const targetLog =
   /^(darwin-arm64|darwin-x64|linux-arm64-gnu|linux-x64-gnu|win32-arm64|win32-x64)\.log\.enc$/;
 const rustEvidence =
   /^rust-(darwin-arm64|darwin-x64|linux-arm64-gnu|linux-x64-gnu|win32-arm64|win32-x64)\.(?:log|metadata|archive)\.enc$/;
+const npmReplay = /^rust-npm-(win32-arm64|win32-x64|stage)\.(?:log|receipt)\.enc$/;
 if (
   assets.some(
     (asset) =>
       !targetLog.test(asset) &&
-      !(run ? rustEvidence.test(asset) : /^(assemble|source-gate)\.log\.enc$/.test(asset)),
+      !(run
+        ? rustEvidence.test(asset) || npmReplay.test(asset)
+        : /^(assemble|source-gate)\.log\.enc$/.test(asset)),
   )
 )
   throw new Error("Invalid diagnostic asset selection.");
@@ -56,23 +59,18 @@ if (run) {
     (workflow.status !== "completed" || workflow.conclusion !== "success")
   )
     throw new Error("Rust archives require a successful verification run.");
-  const targets = new Set(
-    assets.map((asset) => (rustEvidence.exec(asset) ?? targetLog.exec(asset))[1]),
+  const bundles = new Set(
+    assets.map((asset) => {
+      const npm = npmReplay.exec(asset);
+      if (npm) return `rust-npm-verification-${npm[1]}`;
+      const [, target] = rustEvidence.exec(asset) ?? targetLog.exec(asset);
+      return `rust-verification-${target}`;
+    }),
   );
-  for (const target of targets) {
+  for (const bundle of bundles) {
     execFileSync(
       "gh",
-      [
-        "run",
-        "download",
-        run,
-        "--repo",
-        repository,
-        "--name",
-        `rust-verification-${target}`,
-        "--dir",
-        input,
-      ],
+      ["run", "download", run, "--repo", repository, "--name", bundle, "--dir", input],
       {
         stdio: ["ignore", "ignore", "inherit"],
       },

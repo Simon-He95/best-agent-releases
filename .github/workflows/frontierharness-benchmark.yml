@@ -206,3 +206,34 @@ jobs:
           path: ${{ runner.temp }}/frontier-${{ matrix.second }}/report/diagnostics.tar.gz.age
           retention-days: 14
           if-no-files-found: error
+
+  publish:
+    name: publish / scores to bench-results
+    needs: benchmark
+    if: always() && needs.benchmark.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Download the task scores
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: score-*
+          path: ${{ runner.temp }}/scores
+      - name: Commit the task scores to the bench-results branch
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          LABEL: ${{ inputs.label }}
+          FIRST: ${{ inputs.first_profile }}
+          SECOND: ${{ inputs.second_profile }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          REPO: ${{ github.repository }}
+          PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/frontierharness/publish-results.sh

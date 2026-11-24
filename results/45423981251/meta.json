@@ -1,0 +1,12 @@
+{
+  "label": "prompt-guard-1124",
+  "profiles": [
+    "short",
+    "short-guard"
+  ],
+  "repository": "Simon-He95/best-agent-releases",
+  "run_id": "45423981251",
+  "run_url": "https://github.com/Simon-He95/best-agent-releases/actions/runs/45423981251",
+  "source_sha": "227d9d6157c5c03af2298fef9d2c9777a51daa06",
+  "workflow_ref": "Simon-He95/best-agent-releases/.github/workflows/frontierharness-benchmark.yml@refs/heads/codex/fh-prompt-guard-ab"
+}

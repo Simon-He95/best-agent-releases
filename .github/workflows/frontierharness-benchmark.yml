@@ -1,99 +1,239 @@
-name: FrontierHarness benchmark
+name: FrontierHarness v1.1 whole-run effort pair
+run-name: FrontierHarness v1.1 / ${{ inputs.label }}
 
-# Runs the published FrontierHarness task set through Harbor on an amd64 runner.
-# The task images are linux/amd64, so running here rather than on the developer's
-# arm64 machine is what makes wall time meaningful.
 on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: Exact private source commit to benchmark
+        description: Exact private source commit
+        required: true
+        type: string
+      recipient_key:
+        description: Public age key for encrypted diagnostics
         required: true
         type: string
       tasks:
-        description: Comma-separated task subset; empty runs all 21 Terminal-Bench tasks
+        description: Comma-separated subset of the v1.1 whole-run effort pilot
         required: false
         type: string
         default: ""
-      model:
-        description: provider/model passed to the adapter
+      scope:
+        description: Task scope, pilot or board (board allows all of cohort57)
         required: false
         type: string
-        default: deepseek/deepseek-flash
+        default: pilot
+      reverse_order:
+        description: Reverse each pair for confirmation
+        required: false
+        type: boolean
+        default: false
+      first_profile:
+        description: First arm (short or short-effort-high)
+        required: false
+        type: string
+        default: short
+      second_profile:
+        description: Second arm; "none" runs the first arm only (board screen)
+        required: false
+        type: string
+        default: short-effort-high
+      label:
+        description: Unique run label
+        required: false
+        type: string
+        default: oauth57
+      max_parallel:
+        description: Task jobs to run at once
+        required: false
+        type: string
+        default: "4"
 
 permissions:
   contents: read
 
-# Never cancel mid-run: a cancelled trial still holds a container, and its spend
-# is already committed.
 concurrency:
-  group: frontierharness-${{ inputs.source_sha }}
+  group: frontierharness-paired-${{ inputs.source_sha }}-${{ inputs.label }}
   cancel-in-progress: false
 
 jobs:
-  benchmark:
+  plan:
     runs-on: ubuntu-24.04
-    timeout-minutes: 480
-    permissions:
-      contents: read
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - id: plan
+        name: Plan the task pairs
+        env:
+          FH_TASKS: ${{ inputs.tasks }}
+          FH_SCOPE: ${{ inputs.scope }}
+          FH_REVERSE_ORDER: ${{ inputs.reverse_order }}
+          FH_FIRST: ${{ inputs.first_profile }}
+          FH_SECOND: ${{ inputs.second_profile }}
+        run: python3 scripts/frontierharness/plan-pairs.py
+
+  benchmark:
+    name: pair / ${{ matrix.task }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.max_parallel) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: Simon-He95/best-agent
           ref: ${{ inputs.source_sha }}
           ssh-key: ${{ secrets.SOURCE_SSH_KEY }}
           persist-credentials: false
-          fetch-depth: 0
-
-      - name: Record the exact benchmarked commit
-        run: |
-          git rev-parse HEAD
-          git log -1 --format='%H %s'
-          uname -m
-          docker version --format '{{.Server.Version}}'
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+          path: source
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version-file: .nvmrc
-
-      - name: Install Harbor
+          node-version-file: source/.nvmrc
+      - name: Install benchmark dependencies
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install 'harbor==0.14.0'
-          harbor --version
-          python3 --version
-
-      - name: Run the benchmark
+          mkdir -p "$RUNNER_TEMP/frontier/raw" "$RUNNER_TEMP/frontier/report"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq age clang
+          python3 -m venv "$RUNNER_TEMP/frontier/venv"
+          "$RUNNER_TEMP/frontier/venv/bin/pip" install 'harbor==0.14.0'
+          corepack enable
+      - id: build
+        name: Build the pinned short bundle once
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          PYTHONPATH: ${{ github.workspace }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
-          python3 benchmarks/frontierharness/run_benchmark.py \
-            --output "runs/${{ inputs.source_sha }}" \
-            --model "${{ inputs.model }}" \
-            --tasks "${{ inputs.tasks }}"
-
-      - name: Upload results
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+          export FH_ROOT="$RUNNER_TEMP/frontier"
+          bash scripts/frontierharness/build.sh >"$FH_ROOT/raw/build.log" 2>&1
+          printf '%s\n' "$SOURCE_SHA"
+          uname -a
+      - name: Encrypt build diagnostics
+        if: failure() && steps.build.outcome == 'failure'
+        env:
+          RECIPIENT_KEY: ${{ inputs.recipient_key }}
+        run: age --encrypt --recipient "$RECIPIENT_KEY" -o "$RUNNER_TEMP/frontier/build.log.age" "$RUNNER_TEMP/frontier/raw/build.log"
+      - name: Preserve encrypted build diagnostics
+        if: failure() && steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: frontierharness-${{ inputs.source_sha }}
-          path: runs/
-          retention-days: 30
-          if-no-files-found: warn
-
-      - name: Fail when no task was scored
-        if: always()
+          name: build-diagnostics-${{ matrix.task }}
+          path: ${{ runner.temp }}/frontier/build.log.age
+          retention-days: 14
+      - name: Run Dim OAuth (${{ matrix.first }})
+        if: always() && steps.build.outcome == 'success'
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          FH_DIM_OAUTH_SESSION: ${{ secrets.FH_DIM_OAUTH_SESSION }}
+          FH_PROFILE: ${{ matrix.first }}
+          FH_TASKS: ${{ matrix.task }}
+          FH_ROOT: ${{ runner.temp }}/frontier-${{ matrix.first }}
         run: |
-          summary="runs/${{ inputs.source_sha }}/summary.json"
-          if [ ! -f "$summary" ]; then
-            echo "summary.json is missing; the runner did not finish" >&2
-            exit 1
-          fi
-          python3 - "$summary" <<'PY'
-          import json, sys
-          summary = json.load(open(sys.argv[1]))
-          print(json.dumps({k: v for k, v in summary.items() if k != "records"}, indent=2))
-          if not summary["scored"]:
-              raise SystemExit("no task was scored")
-          PY
+          mkdir -p "$FH_ROOT/raw" "$FH_ROOT/report"
+          ln -s "$RUNNER_TEMP/frontier/runtime" "$FH_ROOT/runtime"
+          ln -s "$RUNNER_TEMP/frontier/venv" "$FH_ROOT/venv"
+          node scripts/frontierharness/prepare-profile.mjs >"$FH_ROOT/raw/profile.log" 2>&1
+          bash scripts/frontierharness/run.sh
+      - name: Preserve the task score (${{ matrix.first }})
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: score-${{ matrix.first }}-${{ matrix.task }}
+          path: |
+            ${{ runner.temp }}/frontier-${{ matrix.first }}/report/profile.json
+            ${{ runner.temp }}/frontier-${{ matrix.first }}/report/summary.json
+            ${{ runner.temp }}/frontier-${{ matrix.first }}/report/tasks.csv
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Encrypt raw diagnostics (${{ matrix.first }})
+        if: always() && steps.build.outcome == 'success'
+        env:
+          RECIPIENT_KEY: ${{ inputs.recipient_key }}
+          FH_ROOT: ${{ runner.temp }}/frontier-${{ matrix.first }}
+        run: tar -C "$FH_ROOT" -czf - raw | age --encrypt --recipient "$RECIPIENT_KEY" -o "$FH_ROOT/report/diagnostics.tar.gz.age"
+      - name: Preserve encrypted diagnostics (${{ matrix.first }})
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostics-${{ matrix.first }}-${{ matrix.task }}
+          path: ${{ runner.temp }}/frontier-${{ matrix.first }}/report/diagnostics.tar.gz.age
+          retention-days: 14
+          if-no-files-found: error
+      - name: Run Dim OAuth (${{ matrix.second }})
+        if: always() && steps.build.outcome == 'success' && matrix.second != ''
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          FH_DIM_OAUTH_SESSION: ${{ secrets.FH_DIM_OAUTH_SESSION }}
+          FH_PROFILE: ${{ matrix.second }}
+          FH_TASKS: ${{ matrix.task }}
+          FH_ROOT: ${{ runner.temp }}/frontier-${{ matrix.second }}
+        run: |
+          mkdir -p "$FH_ROOT/raw" "$FH_ROOT/report"
+          ln -s "$RUNNER_TEMP/frontier/runtime" "$FH_ROOT/runtime"
+          ln -s "$RUNNER_TEMP/frontier/venv" "$FH_ROOT/venv"
+          node scripts/frontierharness/prepare-profile.mjs >"$FH_ROOT/raw/profile.log" 2>&1
+          bash scripts/frontierharness/run.sh
+      - name: Preserve the task score (${{ matrix.second }})
+        if: always() && steps.build.outcome == 'success' && matrix.second != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: score-${{ matrix.second }}-${{ matrix.task }}
+          path: |
+            ${{ runner.temp }}/frontier-${{ matrix.second }}/report/profile.json
+            ${{ runner.temp }}/frontier-${{ matrix.second }}/report/summary.json
+            ${{ runner.temp }}/frontier-${{ matrix.second }}/report/tasks.csv
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Encrypt raw diagnostics (${{ matrix.second }})
+        if: always() && steps.build.outcome == 'success' && matrix.second != ''
+        env:
+          RECIPIENT_KEY: ${{ inputs.recipient_key }}
+          FH_ROOT: ${{ runner.temp }}/frontier-${{ matrix.second }}
+        run: tar -C "$FH_ROOT" -czf - raw | age --encrypt --recipient "$RECIPIENT_KEY" -o "$FH_ROOT/report/diagnostics.tar.gz.age"
+      - name: Preserve encrypted diagnostics (${{ matrix.second }})
+        if: always() && steps.build.outcome == 'success' && matrix.second != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostics-${{ matrix.second }}-${{ matrix.task }}
+          path: ${{ runner.temp }}/frontier-${{ matrix.second }}/report/diagnostics.tar.gz.age
+          retention-days: 14
+          if-no-files-found: error
+
+  publish:
+    name: publish / scores to bench-results
+    needs: benchmark
+    if: always() && needs.benchmark.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Download the task scores
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: score-*
+          path: ${{ runner.temp }}/scores
+      - name: Commit the task scores to the bench-results branch
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          LABEL: ${{ inputs.label }}
+          FIRST: ${{ inputs.first_profile }}
+          SECOND: ${{ inputs.second_profile }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          REPO: ${{ github.repository }}
+          PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/frontierharness/publish-results.sh

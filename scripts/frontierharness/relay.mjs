@@ -90,7 +90,7 @@ const server = createServer(async (request, response) => {
       process.env.FH_PROFILE === "short-effort-high" ? "high"
       // short-guard pairs an instruction change with the same effort as the control, so the pair
       // differs by exactly one instruction and nothing else.
-      : ["short", "short-guard", "short-lean"].includes(process.env.FH_PROFILE) ? "max"
+      : ["short", "short-guard", "short-lean", "short-measure"].includes(process.env.FH_PROFILE) ? "max"
       : undefined;
     if (effort !== undefined && payload.reasoning_effort !== effort) {
       payload.reasoning_effort = effort;

@@ -12,6 +12,7 @@ const instructionFile = {
   "short-effort-high": "short.txt",
   "short-guard": "prompt-guard.txt",
   "short-lean": "prompt-lean.txt",
+  "short-measure": "prompt-measure.txt",
 }[profile];
 if (!instructionFile) throw new Error("Unknown profile");
 

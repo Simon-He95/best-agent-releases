@@ -48,7 +48,7 @@ if scope == "board":
 second = os.environ.get("FH_SECOND", "short-effort-high")
 first = os.environ.get("FH_FIRST", "short")
 default_arms = first if second == "none" else f"{first},{second}"
-allowed_arms = ("short", "short-effort-high", "short-guard", "short-lean")
+allowed_arms = ("short", "short-effort-high", "short-guard", "short-lean", "short-measure")
 arms = [arm.strip() for arm in os.environ.get("FH_ARMS", default_arms).split(",") if arm.strip()]
 if not arms or any(arm not in allowed_arms for arm in arms):
     raise SystemExit(f"FH_ARMS must list any of {', '.join(allowed_arms)}")

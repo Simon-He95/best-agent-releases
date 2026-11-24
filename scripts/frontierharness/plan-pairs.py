@@ -48,9 +48,10 @@ if scope == "board":
 second = os.environ.get("FH_SECOND", "short-effort-high")
 first = os.environ.get("FH_FIRST", "short")
 default_arms = first if second == "none" else f"{first},{second}"
+allowed_arms = ("short", "short-effort-high", "short-guard")
 arms = [arm.strip() for arm in os.environ.get("FH_ARMS", default_arms).split(",") if arm.strip()]
-if not arms or any(arm not in ("short", "short-effort-high") for arm in arms):
-    raise SystemExit("FH_ARMS must list short and/or short-effort-high")
+if not arms or any(arm not in allowed_arms for arm in arms):
+    raise SystemExit(f"FH_ARMS must list any of {', '.join(allowed_arms)}")
 selected = [entry.strip() for entry in os.environ.get("FH_TASKS", "").split(",") if entry.strip()]
 if not selected:
     selected = sorted(allowed) if scope == "board" else sorted(pilot)

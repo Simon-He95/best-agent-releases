@@ -8,7 +8,11 @@ from pathlib import Path
 root = Path(os.environ["FH_ROOT"])
 profile = json.loads((root / "report/profile.json").read_text())
 arm = profile["profile"]
-assert arm in ("short", "short-effort-high", "short-guard", "short-lean", "short-measure")
+# arms.json is the declaration both arms share: an arm is accepted only when the ledger shows the
+# effort and the output cap that the arm declared, so a run cannot silently measure something else.
+declared = json.loads((Path(__file__).with_name("arms.json")).read_text())
+assert arm in declared, arm
+assert profile["output_cap"] == declared[arm]["output_cap"], (arm, profile["output_cap"])
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -35,9 +39,9 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
         first = requests[0]
         assert first["model"] == "deepseek-v4.1-flash"
         assert first["tool_count"] == 31 and first["deadline"] is False
-        expected_effort = "high" if arm == "short-effort-high" else "max"
+        expected_effort = declared[arm]["effort"]
         assert first["forwarded_effort"] == expected_effort, (arm, first["forwarded_effort"])
-        assert first["output_cap"] == 131072
+        assert first["output_cap"] == profile["output_cap"], (arm, first["output_cap"])
         assert first["baseline_first_instruction"] == profile["prompt_sha256"]
     failures_by_run = {}
     terminal_runs = []

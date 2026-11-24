@@ -1,9 +1,11 @@
-import { appendFileSync, existsSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { request as requestHttps } from "node:https";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const repo = process.env.FH_REPO;
 const model = "deepseek-v4.1-flash";
@@ -15,6 +17,11 @@ const scriptFormNote = "Use the separate script form only when the schema offers
 const scriptExample = 'For shell text, send {"script":"pwd && ls"}.';
 const showScriptExample = process.env.FH_PROFILE === "short-exec-script-example";
 const maxRequestBytes = 8 * 1024 * 1024;
+// The declared effort per arm. The pair holds this equal so a comparison isolates what the arm
+// actually changes, and an arm that is not declared here is not forced at all.
+const arms = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "arms.json"), "utf8"),
+);
 let ordinal=0;
 const firstTags=new Set();
 const digest=x=>createHash("sha256").update(JSON.stringify(x)).digest("hex");
@@ -83,15 +90,9 @@ const server = createServer(async (request, response) => {
       response.writeHead(400).end();
       return;
     }
-    // The pair differs only by the wire reasoning_effort. Force both values so the comparison holds
-    // whichever default the tested commit carries: the control is the pre-change max, the candidate
-    // the adapter's high.
-    const effort =
-      process.env.FH_PROFILE === "short-effort-high" ? "high"
-      // short-guard pairs an instruction change with the same effort as the control, so the pair
-      // differs by exactly one instruction and nothing else.
-      : ["short", "short-guard", "short-lean", "short-measure"].includes(process.env.FH_PROFILE) ? "max"
-      : undefined;
+    // The pair differs only by what its arm declares. Force the declared effort so the comparison
+    // holds whichever default the tested commit carries.
+    const effort = arms[process.env.FH_PROFILE]?.effort;
     if (effort !== undefined && payload.reasoning_effort !== effort) {
       payload.reasoning_effort = effort;
       body = Buffer.from(JSON.stringify(payload));

@@ -41,5 +41,10 @@
     "instruction": "short.txt",
     "output_cap": 65536,
     "effort": "max"
+  },
+  "short-act": {
+    "instruction": "prompt-act.txt",
+    "output_cap": 32768,
+    "effort": "max"
   }
 }

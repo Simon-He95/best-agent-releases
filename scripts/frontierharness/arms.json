@@ -31,5 +31,15 @@
     "instruction": "prompt-measure.txt",
     "output_cap": 32768,
     "effort": "max"
+  },
+  "short-cap48k": {
+    "instruction": "short.txt",
+    "output_cap": 49152,
+    "effort": "max"
+  },
+  "short-cap64k": {
+    "instruction": "short.txt",
+    "output_cap": 65536,
+    "effort": "max"
   }
 }

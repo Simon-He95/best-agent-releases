@@ -1,0 +1,12 @@
+{
+  "label": "prompt-act-1125",
+  "profiles": [
+    "short",
+    "short-act"
+  ],
+  "repository": "Simon-He95/best-agent-releases",
+  "run_id": "45610156823",
+  "run_url": "https://github.com/Simon-He95/best-agent-releases/actions/runs/45610156823",
+  "source_sha": "227d9d6157c5c03af2298fef9d2c9777a51daa06",
+  "workflow_ref": "Simon-He95/best-agent-releases/.github/workflows/frontierharness-benchmark.yml@refs/heads/codex/fh-prompt-act"
+}

@@ -1,12 +1,17 @@
 {
   "short": {
     "instruction": "short.txt",
+    "output_cap": 32768,
+    "effort": "max"
+  },
+  "short-cap128k": {
+    "instruction": "short.txt",
     "output_cap": 131072,
     "effort": "max"
   },
   "short-effort-high": {
     "instruction": "short.txt",
-    "output_cap": 131072,
+    "output_cap": 32768,
     "effort": "high",
     "env": {
       "BEST_AGENT_BENCHMARK_EXEC_STREAM_BUDGET": "1"
@@ -14,21 +19,16 @@
   },
   "short-guard": {
     "instruction": "prompt-guard.txt",
-    "output_cap": 131072,
+    "output_cap": 32768,
     "effort": "max"
   },
   "short-lean": {
     "instruction": "prompt-lean.txt",
-    "output_cap": 131072,
+    "output_cap": 32768,
     "effort": "max"
   },
   "short-measure": {
     "instruction": "prompt-measure.txt",
-    "output_cap": 131072,
-    "effort": "max"
-  },
-  "short-cap32k": {
-    "instruction": "short.txt",
     "output_cap": 32768,
     "effort": "max"
   }

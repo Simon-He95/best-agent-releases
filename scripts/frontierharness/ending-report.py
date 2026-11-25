@@ -1,0 +1,176 @@
+"""Classify how each trial ended, so a failure can be attributed to its shape.
+
+`pair-report.py` answers "which arm passed more tasks". This answers "why did the failing
+trials fail", which is a different question and the one that decides whether a cap or a
+prompt is the right lever.
+
+The shape that motivated this report: at an output cap of 32768, a trial's final turn can
+spend the entire budget on reasoning, return zero content and zero tool calls, and still be
+recorded as a completed run. Such a cell looks like an ordinary wrong answer in the score
+table, and reading it as a model mistake hides the real cause.
+
+The cap that a trial actually ran with is read from the package's own `transport.jsonl`,
+the same ledger `report.py` trusts, not from a directory name or a current arm table: after
+an arm is renamed or its cap changes, a name would mislabel an old package.
+
+usage: ending-report.py DIAGNOSTICS_ROOT [--arms arms.json]
+
+DIAGNOSTICS_ROOT contains one directory per decrypted package, each holding `profile.json`
+and `raw/jobs/...`; the report walks down to the trial evidence itself.
+"""
+
+import argparse
+import json
+import re
+from collections import Counter
+from pathlib import Path
+
+ORD = re.compile(r",(\d+)\]$")
+SHAPES = ("pass", "starvation", "timeout", "no-deliverable", "answered-wrong", "infra")
+
+
+def ordinal(invocation_id):
+    match = ORD.search(invocation_id or "")
+    return int(match.group(1)) if match else None
+
+
+def trial_facts(evidence_path):
+    """Per-turn usage and tool-call counts for one trial."""
+    usage, calls, content = {}, {}, {}
+    for line in evidence_path.open("rb"):
+        try:
+            event = json.loads(line)
+        except Exception:
+            continue
+        index = ordinal(event.get("invocationId"))
+        if index is None:
+            continue
+        kind = event.get("type")
+        if kind == "model-usage":
+            usage[index] = event.get("usage") or {}
+        elif kind == "model-outcome":
+            candidate = (event.get("outcome") or {}).get("candidate") or {}
+            calls[index] = len(candidate.get("toolCalls") or candidate.get("tool_calls") or [])
+            raw = json.dumps(candidate.get("content")) if candidate.get("content") is not None else ""
+            content[index] = max(len(raw) - 2, 0)
+    if not usage:
+        return None
+    last = max(usage)
+    return {
+        "turns": len(usage),
+        "completion": usage[last].get("completionTokens", 0),
+        "reasoning": usage[last].get("reasoningTokens", 0),
+        "calls": calls.get(last, 0),
+        "content": content.get(last, 0),
+        "output": sum(v.get("completionTokens", 0) for v in usage.values()),
+    }
+
+
+def reward_outcome(trial_dir):
+    result = trial_dir / "result.json"
+    if not result.exists():
+        return None
+    try:
+        data = json.loads(result.read_text())
+    except Exception:
+        return None
+    reward = ((data.get("verifier_result") or {}).get("rewards") or {}).get("reward")
+    exception = (data.get("exception_info") or {}).get("exception_type")
+    if exception == "AgentTimeoutError":
+        return "timeout", reward
+    if reward == 1 and not exception:
+        return "pass", reward
+    if reward is not None:
+        return "fail", reward
+    return "infra", reward
+
+
+def shape_of(outcome, facts, cap):
+    if outcome in (None, "infra"):
+        return "infra"
+    if outcome == "pass":
+        return "pass"
+    if outcome == "timeout":
+        return "timeout"
+    starved = (cap and facts["completion"] >= cap
+               and facts["reasoning"] >= cap * 0.95
+               and facts["calls"] == 0 and facts["content"] == 0)
+    if starved:
+        return "starvation"
+    if facts["calls"] == 0 and facts["content"] == 0:
+        return "no-deliverable"
+    return "answered-wrong"
+
+
+def ledgers_for(trial_dir):
+    """transport.jsonl files beside this trial's package."""
+    for parent in trial_dir.parents:
+        candidate = parent / "raw/transport.jsonl"
+        if candidate.exists():
+            return candidate
+        if parent == parent.parent:
+            break
+    return None
+
+
+def cap_of(ledger, tag):
+    """The output cap the relay recorded for this trial's requests."""
+    caps = set()
+    if not ledger:
+        return None
+    for line in ledger.open():
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        if entry.get("phase") != "request" or entry.get("tag") != tag:
+            continue
+        if isinstance(entry.get("output_cap"), int):
+            caps.add(entry["output_cap"])
+    return max(caps) if len(caps) == 1 else (max(caps) if caps else None)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("root")
+    parser.add_argument("--arms", default=str(Path(__file__).with_name("arms.json")))
+    args = parser.parse_args()
+
+    arms = {}
+    arms_path = Path(args.arms)
+    if arms_path.exists():
+        arms = {name: spec.get("output_cap") for name, spec in json.loads(arms_path.read_text()).items()}
+
+    root = Path(args.root)
+    table = []
+    for evidence in sorted(root.rglob("agent/best-agent-evidence.jsonl")):
+        trial_dir = evidence.parent.parent
+        outcome, reward = reward_outcome(trial_dir) or (None, None)
+        facts = trial_facts(evidence)
+        if not facts:
+            continue
+        cap = cap_of(ledgers_for(trial_dir), trial_dir.name)
+        table.append((cap, trial_dir.name, outcome, reward, facts,
+                      shape_of(outcome, facts, cap), cap))
+
+    if not table:
+        print(f"{root}: no trial evidence found")
+        return 1
+
+    by_arm = Counter((cap, shape) for cap, _, _, _, _, shape, _ in table)
+    print(f"{'cap':>8}{'trial':<44}{'outcome':>9}{'turns':>6}{'lastC':>8}{'lastR':>8}  shape")
+    for cap, name, outcome, _, facts, shape, _ in table:
+        print(f"{str(cap):>8}{name[:42]:<44}{str(outcome):>9}{facts['turns']:>6}"
+              f"{facts['completion']:>8}{facts['reasoning']:>8}  {shape}")
+
+    print()
+    for cap in sorted({row[0] for row in table}, key=lambda v: (v is None, v)):
+        total = sum(1 for row in table if row[0] == cap)
+        parts = [f"{shape}={by_arm[(cap, shape)]}" for shape in SHAPES if by_arm[(cap, shape)]]
+        print(f"cap={cap}: {total} trials — " + ", ".join(parts))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

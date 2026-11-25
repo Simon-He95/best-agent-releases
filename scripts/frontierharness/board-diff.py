@@ -53,6 +53,7 @@ def load(root, arm):
             unreadable.append(f"{directory.name} (no {', '.join(missing)})")
             continue
         packages.append((directory, profile))
+        added = 0
         for row in reader:
             task = row["task"].split("/")[-1]
             if not task:
@@ -62,11 +63,17 @@ def load(root, arm):
                 duplicates.append((task, rows[task][0], directory.name))
                 continue
             rows[task] = (directory.name, row)
+            added += 1
+        if not added:
+            # A header-only table means the package published no cell; reading it as a
+            # package that ran every task would shrink the paired denominator silently.
+            unreadable.append(f"{directory.name} (its table has no rows)")
+            packages.remove((directory, profile))
     return rows, packages, duplicates, unreadable
 
 
 def value(row, key):
-    return row.get(key, "")
+    return row.get(key) or ""
 
 
 def is_pass(row):

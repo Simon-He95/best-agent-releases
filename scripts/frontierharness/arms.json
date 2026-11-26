@@ -66,5 +66,27 @@
       "BEST_AGENT_BENCHMARK_COMPACT_DIR": "/tmp/best-agent-state/compact",
       "BEST_AGENT_BENCHMARK_AUTO_COMPACT_TRIGGER": "50"
     }
+  },
+  "short-compact-late-400k": {
+    "instruction": "short.txt",
+    "output_cap": 32768,
+    "effort": "max",
+    "tool_count": 33,
+    "env": {
+      "BEST_AGENT_BENCHMARK_COMPACT_DIR": "/tmp/best-agent-state/compact",
+      "BEST_AGENT_BENCHMARK_AUTO_COMPACT_TRIGGER": "85",
+      "BEST_AGENT_BENCHMARK_INPUT_BUDGET": "400000"
+    }
+  },
+  "short-compact-early-400k": {
+    "instruction": "short.txt",
+    "output_cap": 32768,
+    "effort": "max",
+    "tool_count": 33,
+    "env": {
+      "BEST_AGENT_BENCHMARK_COMPACT_DIR": "/tmp/best-agent-state/compact",
+      "BEST_AGENT_BENCHMARK_AUTO_COMPACT_TRIGGER": "50",
+      "BEST_AGENT_BENCHMARK_INPUT_BUDGET": "400000"
+    }
   }
 }

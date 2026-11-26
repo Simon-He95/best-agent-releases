@@ -26,8 +26,9 @@ relatively in another counts twice, because resolving it would need the trial's 
 `edit` separates two shapes that `shape` alone conflates, using only those floors:
 `rework` (at least eight edit turns and at most half as many targets — the same few files
 rewritten), `spread` (at least eight edit turns over more targets — many files, few rewrites),
-`few` (fewer than eight), and `-` for a trial with nothing to explain. The distinction matters
-because the two shapes call for opposite instructions, and neither says anything about
+`few` (fewer than eight), `unread` (at least eight turns, none of which named a readable
+target), and `-` for a trial with nothing to explain (pass, or no verdict). The distinction
+matters because the two shapes call for opposite instructions, and neither says anything about
 under-delivery: a trial that built its deliverable through shell redirection also shows zero.
 
 This column describes effort, it does not predict outcome. On the 62-trial archive both shapes
@@ -79,10 +80,13 @@ def written_targets(call):
 
 def edit_shape(outcome, facts):
     """Separates rewriting a few files from spreading edits over many."""
-    if outcome in ("pass", None):
+    if outcome in ("pass", None, "infra"):
         return "-"
     if facts["mutating"] < HEAVY_MUTATIONS:
         return "few"
+    if not facts["paths"]:
+        # Edit calls whose arguments named no readable target: the shape cannot be told.
+        return "unread"
     return "rework" if facts["paths"] * 2 <= facts["mutating"] else "spread"
 
 

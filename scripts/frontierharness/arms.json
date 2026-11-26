@@ -46,5 +46,10 @@
     "instruction": "prompt-tight.txt",
     "output_cap": 32768,
     "effort": "max"
+  },
+  "short-scope": {
+    "instruction": "prompt-scope.txt",
+    "output_cap": 32768,
+    "effort": "max"
   }
 }

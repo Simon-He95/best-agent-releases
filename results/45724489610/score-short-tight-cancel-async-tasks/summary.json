@@ -1,0 +1,23 @@
+{
+  "profile": "short-tight",
+  "source_sha": "e1e5733f4932ae2eaa67707b375db5471b6dfb0e",
+  "output_cap": 32768,
+  "prompt_sha256": "8e32c2e4a3d1d996ed0922f44425f7390becc58d62583fdd65ec2137d55c4506",
+  "bundle_sha256": "60cdb69e09a10e7ac6d25151d4738edb3af7c26d72d86327bd1ebf033d4e317d",
+  "arm": "short-tight",
+  "dataset": "frontier-harness-eval@v1.1.0",
+  "provider": "Dim OAuth",
+  "model": "deepseek-v4.1-flash",
+  "planned": 1,
+  "completed": 1,
+  "pass": 1,
+  "fail": 0,
+  "timeout": 0,
+  "request_rejected": 0,
+  "infra": 0,
+  "input_tokens": 820838,
+  "cache_read_tokens": 787968,
+  "output_tokens": 24797,
+  "model_requests": 25,
+  "requests_with_usage": 25
+}

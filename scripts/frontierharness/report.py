@@ -13,6 +13,11 @@ arm = profile["profile"]
 declared = json.loads((Path(__file__).with_name("arms.json")).read_text())
 assert arm in declared, arm
 assert profile["output_cap"] == declared[arm]["output_cap"], (arm, profile["output_cap"])
+# An arm may declare the tool surface its own configuration produces. Compaction adds the two fold
+# tools, so an arm that enables it states 33; an arm that does not states nothing and keeps the
+# incumbent 31. The declared number is asserted, so a surface that drifted from its declaration
+# still fails loudly instead of being measured as something else.
+expected_tools = declared[arm].get("tool_count", 31)
 ledger = defaultdict(list)
 for line in (root / "raw/transport.jsonl").open():
     entry = json.loads(line)
@@ -38,7 +43,11 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     if requests:
         first = requests[0]
         assert first["model"] == "deepseek-v4.1-flash"
-        assert first["tool_count"] == 31 and first["deadline"] is False
+        assert first["tool_count"] == expected_tools and first["deadline"] is False, (
+            arm,
+            first["tool_count"],
+            expected_tools,
+        )
         expected_effort = declared[arm]["effort"]
         assert first["forwarded_effort"] == expected_effort, (arm, first["forwarded_effort"])
         assert first["output_cap"] == profile["output_cap"], (arm, first["output_cap"])
@@ -106,7 +115,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
             v["request_time_ms"] > cutoff_ms for v in requests
         ) if cutoff_ms is not None else 0,
         "compact_requests_with_original_tools": sum(
-            bool(v.get("compact_context")) and v.get("request_tool_count") == 31
+            bool(v.get("compact_context")) and v.get("request_tool_count") == expected_tools
             and v.get("request_tool_digest") == requests[0]["tool_digest"]
             for v in requests
         ) if requests else 0,

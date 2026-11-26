@@ -51,6 +51,7 @@
     "instruction": "short.txt",
     "output_cap": 32768,
     "effort": "max",
+    "tool_count": 33,
     "env": {
       "BEST_AGENT_BENCHMARK_COMPACT_DIR": "/tmp/best-agent-state/compact",
       "BEST_AGENT_BENCHMARK_AUTO_COMPACT_TRIGGER": "85"
@@ -60,6 +61,7 @@
     "instruction": "short.txt",
     "output_cap": 32768,
     "effort": "max",
+    "tool_count": 33,
     "env": {
       "BEST_AGENT_BENCHMARK_COMPACT_DIR": "/tmp/best-agent-state/compact",
       "BEST_AGENT_BENCHMARK_AUTO_COMPACT_TRIGGER": "50"

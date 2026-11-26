@@ -66,6 +66,9 @@ def trial_facts(evidence_path):
         # Reasoning over the whole trial, not only its last turn. A change can move this share
         # without moving the pass rate, and reading only the last turn hides that.
         "reasoning_total": sum(v.get("reasoningTokens", 0) for v in usage.values()),
+        # A provider that reports no reasoning leaves the field out; counting those turns as
+        # zero would understate the share silently, so the report marks the value a lower bound.
+        "reasoning_turns": sum(1 for v in usage.values() if "reasoningTokens" in v),
     }
 
 
@@ -166,8 +169,10 @@ def main():
           f"{'share':>7}  shape")
     for cap, name, outcome, _, facts, shape, _ in table:
         share = (facts["reasoning_total"] / facts["output"] * 100) if facts["output"] else 0
+        exact = facts["reasoning_turns"] == facts["turns"]
         print(f"{str(cap):>8}{name[:42]:<44}{str(outcome):>9}{facts['turns']:>6}"
-              f"{facts['completion']:>8}{facts['reasoning']:>8}{share:>6.0f}%  {shape}")
+              f"{facts['completion']:>8}{facts['reasoning']:>8}{share:>6.0f}%"
+              f"{'' if exact else '+'}  {shape}")
 
     print()
     for cap in sorted({row[0] for row in table}, key=lambda v: (v is None, v)):
@@ -177,8 +182,15 @@ def main():
     outputs = sum(row[4]["output"] for row in table)
     reasoning = sum(row[4]["reasoning_total"] for row in table)
     if outputs:
+        partial = [row[1] for row in table
+                   if row[4]["reasoning_turns"] != row[4]["turns"]]
         print(f"whole tree: {len(table)} trials, output={outputs}, "
-              f"reasoning={reasoning} ({reasoning / outputs * 100:.0f}% of output)")
+              f"reasoning={reasoning} ({'at least ' if partial else ''}"
+              f"{reasoning / outputs * 100:.0f}% of output)")
+        if partial:
+            print(f"  {len(partial)} trial(s) report no reasoning tokens on some turn, so the "
+                  f"share is a lower bound: {', '.join(partial[:6])}"
+                  f"{' …' if len(partial) > 6 else ''}")
     return 0
 
 

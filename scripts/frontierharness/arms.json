@@ -41,5 +41,10 @@
     "instruction": "short.txt",
     "output_cap": 65536,
     "effort": "max"
+  },
+  "short-tight": {
+    "instruction": "prompt-tight.txt",
+    "output_cap": 32768,
+    "effort": "max"
   }
 }

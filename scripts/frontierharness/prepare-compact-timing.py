@@ -11,20 +11,27 @@ This patch adds three environment reads and nothing else:
                                             given `--compact-dir` (the flag still wins)
   BEST_AGENT_BENCHMARK_AUTO_COMPACT_TRIGGER overrides the trigger share, in percent, and is
                                             clamped by the product's own admitted band [50, 100]
-  BEST_AGENT_BENCHMARK_INPUT_BUDGET         declares the prompt allowance the arm measures, in
-                                            tokens: it only ever narrows the model's own resolved
-                                            budget, and states itself as `explicit-config` instead
-                                            of presenting the number as provider metadata
+  BEST_AGENT_BENCHMARK_DECISION_WINDOW      declares the window the fold decision judges, in
+                                            tokens: it lowers the threshold the decision compares
+                                            against and changes nothing else — the model's real
+                                            budget, its enforcement and the workspace tool limits
+                                            stay the model's own
 
 Without any of the three the bundle behaves exactly as before: no compact directory, ratio 0.85 and
-the model's own budget. All are recorded per arm in arms.json, and the run's own score package
+the model's own window. All are recorded per arm in arms.json, and the run's own score package
 carries the observable consequence (`compact_context_requests`), so an arm that never folded is
 visible as a zero.
 
-Why the budget is a knob at all: the trigger fires when the next request would reach `ratio` of the
-declared budget, so at the shipped 1M window and 0.85 the wall sits near 850k while these tasks'
-largest single request is ~650k — the fold cannot fire, and a fold timing cannot be measured. An arm
-that declares a smaller allowance moves the wall into the range the tasks actually reach.
+Why a decision window is a knob at all: the trigger fires when the next request would reach `ratio`
+of the window, so at the shipped 1M window and 0.85 the wall sits near 850k while these tasks'
+largest single request is ~650k — the fold cannot fire, and a fold timing cannot be measured.
+
+Declaring a *smaller real* budget does not fix that, which is why this knob exists instead: the
+product derives its workspace report cap from the same budget (`execReportBytes ≈ budget·3/8`), so a
+400k budget also cuts every exec report to 149 KB and the transcript stops growing — the wall and the
+material both shrink. Measured on gcode-to-text: 389k peak request at a 1M budget (374 KB reports)
+against 121k at a 400k budget (149 KB reports), so even the 200k wall stayed out of reach. A decision
+window lowers only the threshold, leaving the material these tasks produce intact.
 
 Run from the harness root, whose `source/` is the checked-out private tree.
 """
@@ -70,55 +77,36 @@ replace_once(
     process.env.BEST_AGENT_BENCHMARK_COMPACT_DIR || undefined;""",
 )
 
-# One resolution point feeds every reader of the budget (the fold trigger, the binding's own input
-# ruler and the workspace tool limits), so the declaration lands here rather than beside any of
-# them. It narrows only: a value at or above the model's own budget leaves the resolved record
-# untouched, so a declared window can never claim more room than the provider's record states.
+# The decision itself. `window` keeps reporting the model's real window, because a caller reads it
+# for more than the threshold (`native-runtime-bridge` compares a checkpoint against it to decide
+# whether the source still fits), so only the threshold moves. A declared window at or above the
+# real one, or one that is not a positive integer, leaves the shipped decision exactly as it was.
 replace_once(
-    "v3-request-budget.ts",
-    """  return resolveRequestBudget(
-    limits === undefined
-      ? undefined
-      : {
-          contextWindowTokens: limits.context,
-          maxPromptTokens: limits.input,
-          maxOutputTokens: limits.output,
-          model,
-          source: "provider-model-metadata",
-        },
-    model,
-  );""",
-    """  const resolved = resolveRequestBudget(
-    limits === undefined
-      ? undefined
-      : {
-          contextWindowTokens: limits.context,
-          maxPromptTokens: limits.input,
-          maxOutputTokens: limits.output,
-          model,
-          source: "provider-model-metadata",
-        },
-    model,
-  );
-  // The benchmark may declare the prompt allowance an arm is measuring, so one bundle can compare
-  // folding at a window these tasks actually fill. The declaration is a host policy laid over the
-  // model's own numbers: it never widens them, and it labels itself `explicit-config` rather than
-  // passing the number off as provider metadata. A model whose own budget is unknown keeps its own
-  // answer, so a typo in the arm cannot silently invent a window the run then measures against.
-  const declaredBudget = Number(process.env.BEST_AGENT_BENCHMARK_INPUT_BUDGET);
-  if (
-    resolved === undefined ||
-    !Number.isSafeInteger(declaredBudget) ||
-    declaredBudget <= 0 ||
-    declaredBudget >= resolved.inputBudgetTokens
-  ) {
-    return resolved;
-  }
-  return Object.freeze({
-    ...resolved,
-    budgetSource: "explicit-config",
-    inputBudgetTokens: declaredBudget,
-  });""",
+    "product-slices/auto-compact.ts",
+    """  const window = requestInputWindow(budget);
+  const forced = unrecoveredWall === true;
+  if (window === undefined)
+    return forced
+      ? Object.freeze({ window: undefined, threshold: undefined, estimated, triggered: true })
+      : undefined;
+  const threshold = Math.floor(window * normalizeAutoCompactTriggerRatio(triggerRatio));""",
+    """  const window = requestInputWindow(budget);
+  const forced = unrecoveredWall === true;
+  if (window === undefined)
+    return forced
+      ? Object.freeze({ window: undefined, threshold: undefined, estimated, triggered: true })
+      : undefined;
+  // The benchmark may judge the decision against a window these tasks actually fill. Only the
+  // threshold moves: the reported `window` stays the model's real one, and the model's budget, its
+  // enforcement and the workspace limits derived from it are untouched.
+  const declaredDecisionWindow = Number(process.env.BEST_AGENT_BENCHMARK_DECISION_WINDOW);
+  const decisionWindow =
+    Number.isSafeInteger(declaredDecisionWindow) &&
+    declaredDecisionWindow > 0 &&
+    declaredDecisionWindow < window
+      ? declaredDecisionWindow
+      : window;
+  const threshold = Math.floor(decisionWindow * normalizeAutoCompactTriggerRatio(triggerRatio));""",
 )
 
 print("compact timing patch applied")

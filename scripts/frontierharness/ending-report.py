@@ -16,6 +16,14 @@ an arm is renamed or its cap changes, a name would mislabel an old package.
 `share` is the trial's reasoning tokens over its output tokens. A `+` after it means some turn
 reported no `reasoningTokens`, so the value is a lower bound rather than a measurement.
 
+`mut` and `paths` answer a different question from `shape`: how the trial spent its edits.
+`mut` counts turns that called a file-writing tool (`write`, `apply_patch`, `edit`) and `paths`
+the distinct targets they named. A shell redirection inside `exec` also writes a file but is not
+counted, so both numbers are floors. That floor is why `edit` names only one shape: `thrash`
+(at least eight such turns) is robust to it, while "wrote almost nothing" is not — a trial that
+built its deliverable through shell redirection also shows zero here, so a low count is not
+evidence of under-delivery. Passing trials print `-`.
+
 usage: ending-report.py DIAGNOSTICS_ROOT [--arms arms.json]
 
 DIAGNOSTICS_ROOT contains one directory per decrypted package, each holding `profile.json`
@@ -30,6 +38,34 @@ from pathlib import Path
 
 ORD = re.compile(r",(\d+)\]$")
 SHAPES = ("pass", "starvation", "timeout", "no-deliverable", "answered-wrong", "infra")
+WRITE_TOOLS = ("write", "apply_patch", "edit")
+THRASH_MUTATIONS = 8
+PATH_PATTERN = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$|^\+\+\+ b/(.+)$", re.M)
+
+
+def written_targets(call):
+    """The file(s) one writing tool call names, across the shapes those tools accept."""
+    payload = call.get("input")
+    if not isinstance(payload, dict):
+        try:
+            payload = json.loads(payload or "{}")
+        except Exception:
+            return []
+    found = [payload[key] for key in ("path", "file_path", "file")
+             if isinstance(payload.get(key), str)]
+    patch = payload.get("patch")
+    if isinstance(patch, str):
+        found.extend(next(group for group in match if group) for match in PATH_PATTERN.findall(patch))
+    return [target.strip() for target in found if target.strip()]
+
+
+def edit_shape(outcome, facts):
+    """`thrash` is the one shape these floors can prove: many rewrites without converging."""
+    if outcome != "fail":
+        return "-"
+    if facts["mutating"] >= THRASH_MUTATIONS:
+        return "thrash"
+    return "other"
 
 
 def ordinal(invocation_id):
@@ -38,8 +74,8 @@ def ordinal(invocation_id):
 
 
 def trial_facts(evidence_path):
-    """Per-turn usage and tool-call counts for one trial."""
-    usage, calls, content = {}, {}, {}
+    """Per-turn usage, tool-call counts and written targets for one trial."""
+    usage, calls, content, written, mutating = {}, {}, {}, set(), set()
     for line in evidence_path.open("rb"):
         try:
             event = json.loads(line)
@@ -53,7 +89,13 @@ def trial_facts(evidence_path):
             usage[index] = event.get("usage") or {}
         elif kind == "model-outcome":
             candidate = (event.get("outcome") or {}).get("candidate") or {}
-            calls[index] = len(candidate.get("toolCalls") or candidate.get("tool_calls") or [])
+            tool_calls = candidate.get("toolCalls") or candidate.get("tool_calls") or []
+            calls[index] = len(tool_calls)
+            for call in tool_calls:
+                if str(call.get("name") or "").lower() not in WRITE_TOOLS:
+                    continue
+                mutating.add(index)
+                written.update(written_targets(call))
             raw = json.dumps(candidate.get("content")) if candidate.get("content") is not None else ""
             content[index] = max(len(raw) - 2, 0)
     if not usage:
@@ -72,6 +114,8 @@ def trial_facts(evidence_path):
         # A provider that reports no reasoning leaves the field out; counting those turns as
         # zero would understate the share silently, so the report marks the value a lower bound.
         "reasoning_turns": sum(1 for v in usage.values() if "reasoningTokens" in v),
+        "mutating": len(mutating),
+        "paths": len(written),
     }
 
 
@@ -169,13 +213,14 @@ def main():
 
     by_arm = Counter((cap, shape) for cap, _, _, _, _, shape, _ in table)
     print(f"{'cap':>8} {'trial':<44}{'outcome':>9}{'turns':>6}{'lastC':>8}{'lastR':>8}"
-          f"{'share':>7}  shape")
+          f"{'share':>7}{'mut':>5}{'paths':>6}  {'shape':<14} edit")
     for cap, name, outcome, _, facts, shape, _ in table:
         share = (facts["reasoning_total"] / facts["output"] * 100) if facts["output"] else 0
         exact = facts["reasoning_turns"] == facts["turns"]
         print(f"{str(cap):>8} {name[:42]:<44}{str(outcome):>9}{facts['turns']:>6}"
               f"{facts['completion']:>8}{facts['reasoning']:>8}{share:>6.0f}%"
-              f"{'' if exact else '+'}  {shape}")
+              f"{'' if exact else '+'}{facts['mutating']:>5}{facts['paths']:>6}  "
+              f"{shape:<14} {edit_shape(outcome, facts)}")
 
     print()
     for cap in sorted({row[0] for row in table}, key=lambda v: (v is None, v)):

@@ -1,0 +1,12 @@
+{
+  "label": "compact-budget-400k",
+  "profiles": [
+    "short-compact-late-400k",
+    "short-compact-early-400k"
+  ],
+  "repository": "Simon-He95/best-agent-releases",
+  "run_id": "45770524464",
+  "run_url": "https://github.com/Simon-He95/best-agent-releases/actions/runs/45770524464",
+  "source_sha": "e1e5733f4932ae2eaa67707b375db5471b6dfb0e",
+  "workflow_ref": "Simon-He95/best-agent-releases/.github/workflows/frontierharness-benchmark.yml@refs/heads/codex/fh-compact-timing"
+}

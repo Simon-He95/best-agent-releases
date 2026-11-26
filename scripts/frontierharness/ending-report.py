@@ -13,6 +13,9 @@ The cap that a trial actually ran with is read from the package's own `transport
 the same ledger `report.py` trusts, not from a directory name or a current arm table: after
 an arm is renamed or its cap changes, a name would mislabel an old package.
 
+`share` is the trial's reasoning tokens over its output tokens. A `+` after it means some turn
+reported no `reasoningTokens`, so the value is a lower bound rather than a measurement.
+
 usage: ending-report.py DIAGNOSTICS_ROOT [--arms arms.json]
 
 DIAGNOSTICS_ROOT contains one directory per decrypted package, each holding `profile.json`
@@ -165,12 +168,12 @@ def main():
         return 1
 
     by_arm = Counter((cap, shape) for cap, _, _, _, _, shape, _ in table)
-    print(f"{'cap':>8}{'trial':<44}{'outcome':>9}{'turns':>6}{'lastC':>8}{'lastR':>8}"
+    print(f"{'cap':>8} {'trial':<44}{'outcome':>9}{'turns':>6}{'lastC':>8}{'lastR':>8}"
           f"{'share':>7}  shape")
     for cap, name, outcome, _, facts, shape, _ in table:
         share = (facts["reasoning_total"] / facts["output"] * 100) if facts["output"] else 0
         exact = facts["reasoning_turns"] == facts["turns"]
-        print(f"{str(cap):>8}{name[:42]:<44}{str(outcome):>9}{facts['turns']:>6}"
+        print(f"{str(cap):>8} {name[:42]:<44}{str(outcome):>9}{facts['turns']:>6}"
               f"{facts['completion']:>8}{facts['reasoning']:>8}{share:>6.0f}%"
               f"{'' if exact else '+'}  {shape}")
 

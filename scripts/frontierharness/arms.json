@@ -46,5 +46,23 @@
     "instruction": "prompt-tight.txt",
     "output_cap": 32768,
     "effort": "max"
+  },
+  "short-compact-late": {
+    "instruction": "short.txt",
+    "output_cap": 32768,
+    "effort": "max",
+    "env": {
+      "BEST_AGENT_BENCHMARK_COMPACT_DIR": "/tmp/best-agent-state/compact",
+      "BEST_AGENT_BENCHMARK_AUTO_COMPACT_TRIGGER": "85"
+    }
+  },
+  "short-compact-early": {
+    "instruction": "short.txt",
+    "output_cap": 32768,
+    "effort": "max",
+    "env": {
+      "BEST_AGENT_BENCHMARK_COMPACT_DIR": "/tmp/best-agent-state/compact",
+      "BEST_AGENT_BENCHMARK_AUTO_COMPACT_TRIGGER": "50"
+    }
   }
 }

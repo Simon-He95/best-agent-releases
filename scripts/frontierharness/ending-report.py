@@ -17,12 +17,25 @@ an arm is renamed or its cap changes, a name would mislabel an old package.
 reported no `reasoningTokens`, so the value is a lower bound rather than a measurement.
 
 `mut` and `paths` answer a different question from `shape`: how the trial spent its edits.
-`mut` counts turns that called a file-writing tool (`write`, `apply_patch`, `edit`) and `paths`
-the distinct targets they named. A shell redirection inside `exec` also writes a file but is not
-counted, so both numbers are floors. That floor is why `edit` names only one shape: `thrash`
-(at least eight such turns) is robust to it, while "wrote almost nothing" is not — a trial that
-built its deliverable through shell redirection also shows zero here, so a low count is not
-evidence of under-delivery. Passing trials print `-`.
+`mut` counts turns that emitted a file-writing call (`write`, `apply_patch`, `edit`) and `paths`
+the distinct normalized spellings those calls named. Both count what the model proposed, so a
+call the tool gate refused still counts; and a shell redirection inside `exec` writes a file
+without appearing here, so both numbers are floors. A path named absolutely in one call and
+relatively in another counts twice, because resolving it would need the trial's workspace root.
+
+`edit` separates two shapes that `shape` alone conflates, using only those floors:
+`rework` (at least eight edit turns and at most half as many targets — the same few files
+rewritten), `spread` (at least eight edit turns over more targets — many files, few rewrites),
+`few` (fewer than eight), and `-` for a trial with nothing to explain. The distinction matters
+because the two shapes call for opposite instructions, and neither says anything about
+under-delivery: a trial that built its deliverable through shell redirection also shows zero.
+
+This column describes effort, it does not predict outcome. On the 62-trial archive both shapes
+appear on solved and unsolved trials alike (rework: `adaptive-rejection-sampler` reached reward
+1.0 with 24 turns on one file; spread: `dna-insert`, `large-scale-text-editing` and `tune-mjcf`
+reached 1.0 over 20–26 targets). Failing trials do spend more edit turns on average — median 18
+against 3 — but no per-trial shape separates the two groups, so an instruction that targets one
+shape is not thereby targeting failure.
 
 usage: ending-report.py DIAGNOSTICS_ROOT [--arms arms.json]
 
@@ -32,6 +45,7 @@ and `raw/jobs/...`; the report walks down to the trial evidence itself.
 
 import argparse
 import json
+import posixpath
 import re
 from collections import Counter
 from pathlib import Path
@@ -39,7 +53,7 @@ from pathlib import Path
 ORD = re.compile(r",(\d+)\]$")
 SHAPES = ("pass", "starvation", "timeout", "no-deliverable", "answered-wrong", "infra")
 WRITE_TOOLS = ("write", "apply_patch", "edit")
-THRASH_MUTATIONS = 8
+HEAVY_MUTATIONS = 8
 PATH_PATTERN = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$|^\+\+\+ b/(.+)$", re.M)
 
 
@@ -51,21 +65,25 @@ def written_targets(call):
             payload = json.loads(payload or "{}")
         except Exception:
             return []
+    if not isinstance(payload, dict):
+        # A provider can leave an unparsable argument as a string; a malformed call is a
+        # fact about that call, not a reason to lose the whole tree.
+        return []
     found = [payload[key] for key in ("path", "file_path", "file")
              if isinstance(payload.get(key), str)]
     patch = payload.get("patch")
     if isinstance(patch, str):
         found.extend(next(group for group in match if group) for match in PATH_PATTERN.findall(patch))
-    return [target.strip() for target in found if target.strip()]
+    return [posixpath.normpath(target.strip()) for target in found if target.strip()]
 
 
 def edit_shape(outcome, facts):
-    """`thrash` is the one shape these floors can prove: many rewrites without converging."""
-    if outcome != "fail":
+    """Separates rewriting a few files from spreading edits over many."""
+    if outcome in ("pass", None):
         return "-"
-    if facts["mutating"] >= THRASH_MUTATIONS:
-        return "thrash"
-    return "other"
+    if facts["mutating"] < HEAVY_MUTATIONS:
+        return "few"
+    return "rework" if facts["paths"] * 2 <= facts["mutating"] else "spread"
 
 
 def ordinal(invocation_id):
@@ -90,8 +108,12 @@ def trial_facts(evidence_path):
         elif kind == "model-outcome":
             candidate = (event.get("outcome") or {}).get("candidate") or {}
             tool_calls = candidate.get("toolCalls") or candidate.get("tool_calls") or []
+            if not isinstance(tool_calls, list):
+                tool_calls = []
             calls[index] = len(tool_calls)
             for call in tool_calls:
+                if not isinstance(call, dict):
+                    continue
                 if str(call.get("name") or "").lower() not in WRITE_TOOLS:
                     continue
                 mutating.add(index)
@@ -213,13 +235,14 @@ def main():
 
     by_arm = Counter((cap, shape) for cap, _, _, _, _, shape, _ in table)
     print(f"{'cap':>8} {'trial':<44}{'outcome':>9}{'turns':>6}{'lastC':>8}{'lastR':>8}"
-          f"{'share':>7}{'mut':>5}{'paths':>6}  {'shape':<14} edit")
+          f"{'share':>8}{'mut':>5}{'paths':>6}  {'shape':<14} edit")
     for cap, name, outcome, _, facts, shape, _ in table:
         share = (facts["reasoning_total"] / facts["output"] * 100) if facts["output"] else 0
         exact = facts["reasoning_turns"] == facts["turns"]
+        mark = "+" if not exact else " "
         print(f"{str(cap):>8} {name[:42]:<44}{str(outcome):>9}{facts['turns']:>6}"
-              f"{facts['completion']:>8}{facts['reasoning']:>8}{share:>6.0f}%"
-              f"{'' if exact else '+'}{facts['mutating']:>5}{facts['paths']:>6}  "
+              f"{facts['completion']:>8}{facts['reasoning']:>8}{share:>6.0f}%{mark}"
+              f"{facts['mutating']:>5}{facts['paths']:>6}  "
               f"{shape:<14} {edit_shape(outcome, facts)}")
 
     print()

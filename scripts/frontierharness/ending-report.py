@@ -63,6 +63,9 @@ def trial_facts(evidence_path):
         "calls": calls.get(last, 0),
         "content": content.get(last, 0),
         "output": sum(v.get("completionTokens", 0) for v in usage.values()),
+        # Reasoning over the whole trial, not only its last turn. A change can move this share
+        # without moving the pass rate, and reading only the last turn hides that.
+        "reasoning_total": sum(v.get("reasoningTokens", 0) for v in usage.values()),
     }
 
 
@@ -159,16 +162,23 @@ def main():
         return 1
 
     by_arm = Counter((cap, shape) for cap, _, _, _, _, shape, _ in table)
-    print(f"{'cap':>8}{'trial':<44}{'outcome':>9}{'turns':>6}{'lastC':>8}{'lastR':>8}  shape")
+    print(f"{'cap':>8}{'trial':<44}{'outcome':>9}{'turns':>6}{'lastC':>8}{'lastR':>8}"
+          f"{'share':>7}  shape")
     for cap, name, outcome, _, facts, shape, _ in table:
+        share = (facts["reasoning_total"] / facts["output"] * 100) if facts["output"] else 0
         print(f"{str(cap):>8}{name[:42]:<44}{str(outcome):>9}{facts['turns']:>6}"
-              f"{facts['completion']:>8}{facts['reasoning']:>8}  {shape}")
+              f"{facts['completion']:>8}{facts['reasoning']:>8}{share:>6.0f}%  {shape}")
 
     print()
     for cap in sorted({row[0] for row in table}, key=lambda v: (v is None, v)):
         total = sum(1 for row in table if row[0] == cap)
         parts = [f"{shape}={by_arm[(cap, shape)]}" for shape in SHAPES if by_arm[(cap, shape)]]
         print(f"cap={cap}: {total} trials — " + ", ".join(parts))
+    outputs = sum(row[4]["output"] for row in table)
+    reasoning = sum(row[4]["reasoning_total"] for row in table)
+    if outputs:
+        print(f"whole tree: {len(table)} trials, output={outputs}, "
+              f"reasoning={reasoning} ({reasoning / outputs * 100:.0f}% of output)")
     return 0
 
 

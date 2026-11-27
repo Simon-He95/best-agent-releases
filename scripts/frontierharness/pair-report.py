@@ -4,13 +4,15 @@ Reads the `score-*` directories that `fh-fetch.py score` writes and compares arm
 in the same run. Three things this report refuses to do, because each one produced a wrong
 conclusion before:
 
-- count an `infra` or `request_rejected` cell as a failure of the arm: such a cell measures
-  the transport, not the instruction, so a pair containing one is excluded and listed;
+- infer the cause of a request rejection from its status alone: a pair containing infrastructure
+  failure or an unresolved rejection is excluded and listed. Use --count-harness-rejection
+  for an individual rejection whose Harness cause is confirmed by the original diagnostics;
 - call a single-run difference a result: it also prints how often the control itself flips
   across every observation available for the same arm, which is the noise band;
 - compare arms that ran in different runs: only same-run pairs are scored.
 
 usage: pair-report.py SCORE_ROOT [SCORE_ROOT ...] [--arm A] [--versus B]
+                      [--count-harness-rejection TASK:ARM]
 
 With no --arm/--versus the pairs are discovered from the profiles present.
 """
@@ -64,8 +66,7 @@ def discover_arms(cells):
     return [arm for arm, _ in counts.most_common()]
 
 
-def report(root, arm_a, arm_b):
-    cells, caps = load(root)
+def report(root, cells, caps, arm_a, arm_b, confirmed_rejections):
     tasks = sorted(t for t, rows in cells.items() if arm_a in rows and arm_b in rows)
     if not tasks:
         print(f"{root}: no task was run by both {arm_a} and {arm_b}")
@@ -78,7 +79,10 @@ def report(root, arm_a, arm_b):
     usable, excluded = [], []
     for task in tasks:
         a, b = cells[task][arm_a], cells[task][arm_b]
-        if a["outcome"] in EXCLUDED_OUTCOMES or b["outcome"] in EXCLUDED_OUTCOMES:
+        if any(
+            row["outcome"] in EXCLUDED_OUTCOMES and f"{task}:{arm}" not in confirmed_rejections
+            for arm, row in ((arm_a, a), (arm_b, b))
+        ):
             excluded.append((task, a["outcome"], b["outcome"]))
             read = f"excluded ({a['outcome']}/{b['outcome']})"
         else:
@@ -86,6 +90,8 @@ def report(root, arm_a, arm_b):
             read = ("B" if is_pass(b) and not is_pass(a)
                     else "A" if is_pass(a) and not is_pass(b)
                     else "both" if is_pass(a) else "neither")
+            if any(f"{task}:{arm}" in confirmed_rejections for arm in (arm_a, arm_b)):
+                read += " (confirmed Harness rejection)"
         print(f"{task:<32}{a['outcome']:>12}{b['outcome']:>12}"
               f"{number(a['agent_seconds']):>7.0f}{number(b['agent_seconds']):>7.0f}"
               f"{int(number(a['output_tokens'])):>9}{int(number(b['output_tokens'])):>9}  {read}")
@@ -133,11 +139,18 @@ def main():
     parser.add_argument("roots", nargs="+")
     parser.add_argument("--arm")
     parser.add_argument("--versus")
+    parser.add_argument(
+        "--count-harness-rejection", action="append", default=[], metavar="TASK:ARM",
+        help="count this request rejection after confirming its Harness cause in diagnostics",
+    )
     args = parser.parse_args()
+    confirmed_rejections = set(args.count_harness_rejection)
+    if confirmed_rejections and len(args.roots) != 1:
+        parser.error("--count-harness-rejection requires exactly one score root")
 
     status = 0
     for root in args.roots:
-        cells, _ = load(root)
+        cells, caps = load(root)
         arm_a, arm_b = args.arm, args.versus
         if not arm_a or not arm_b:
             arms = discover_arms(cells)
@@ -146,7 +159,18 @@ def main():
                 status = 1
                 continue
             arm_a, arm_b = arms[0], arms[1]
-        status |= report(root, arm_a, arm_b)
+        if confirmed_rejections:
+            rejected_in_pair = {
+                f"{task}:{arm}"
+                for task, rows in cells.items()
+                if arm_a in rows and arm_b in rows
+                for arm in (arm_a, arm_b)
+                if rows[arm]["outcome"] == "request_rejected"
+            }
+            unmatched = confirmed_rejections - rejected_in_pair
+            if unmatched:
+                parser.error("no matching paired request rejection: " + ", ".join(sorted(unmatched)))
+        status |= report(root, cells, caps, arm_a, arm_b, confirmed_rejections)
         print()
     return status
 

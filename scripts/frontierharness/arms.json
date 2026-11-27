@@ -4,6 +4,14 @@
     "output_cap": 32768,
     "effort": "max"
   },
+  "short-declared-route-window": {
+    "instruction": "short.txt",
+    "output_cap": 32768,
+    "effort": "max",
+    "env": {
+      "BEST_AGENT_BENCHMARK_DECLARE_ROUTE_WINDOW": "1"
+    }
+  },
   "short-cap128k": {
     "instruction": "short.txt",
     "output_cap": 131072,

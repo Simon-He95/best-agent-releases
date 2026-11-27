@@ -30,3 +30,15 @@ replace_once(
     ...(benchmarkModel ? { maxOutputTokens: benchmarkOutputCap } : {}),
     apiKey: selectedApiKey,""",
 )
+
+replace_once(
+    "v3-run-options.ts",
+    "  const requestBudgetSelection = resolveModelRequestBudget(selectedModel, ownLimits);",
+    """  // The Dim relay is presented as a compatible provider and carries no window catalog.
+  // This experiment declares the Dim record's context size and reserves the cap used by the arm.
+  const selectedLimits =
+    benchmarkModel && environment.BEST_AGENT_BENCHMARK_DECLARE_ROUTE_WINDOW === "1"
+      ? { context: 1_000_000, output: benchmarkOutputCap }
+      : ownLimits;
+  const requestBudgetSelection = resolveModelRequestBudget(selectedModel, selectedLimits);""",
+)

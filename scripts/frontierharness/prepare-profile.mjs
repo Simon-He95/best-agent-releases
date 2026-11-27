@@ -17,9 +17,9 @@ const pinned = readFileSync(join(folder, "short.txt"), "utf8").trim();
 const instruction = readFileSync(join(folder, instructionFile), "utf8").trim();
 
 const path = join(process.env.FH_ROOT, "runtime/lib/node_modules/@best-agent/cli/dist/index.js");
-// Both arms share this runtime; start from the copy build.sh kept aside so neither arm inherits the
-// other's prompt.
-copyFileSync(join(process.env.FH_ROOT, "runtime/pristine-index.js"), path);
+// Both arms restore the same runner-side copy before substituting their instruction. The copy
+// stays outside the runtime directory mounted in the task.
+copyFileSync(join(process.env.FH_ROOT, "pristine-index.js"), path);
 const original = readFileSync(path, "utf8");
 const pinnedJson = JSON.stringify(pinned);
 if (original.split(pinnedJson).length !== 2) throw new Error("Expected one pinned behavior instruction");

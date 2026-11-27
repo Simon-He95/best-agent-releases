@@ -9,8 +9,8 @@
     "output_cap": 32768,
     "effort": "max"
   },
-  "short-private-evidence-audit": {
-    "instruction": "prompt-readonly-audit.txt",
+  "short-private-evidence-directory-discovery": {
+    "instruction": "prompt-directory-discovery.txt",
     "output_cap": 32768,
     "effort": "max"
   },

@@ -15,7 +15,7 @@ DEFAULT_OUTPUT_CAP = ARMS["short"]["output_cap"]
 def arm_environment(profile):
     arm = ARMS[profile]
     env = dict(arm.get("env") or {})
-    if profile in ("short-private-evidence", "short-private-evidence-audit"):
+    if profile in ("short-private-evidence", "short-private-evidence-directory-discovery"):
         port = os.environ["FH_EVIDENCE_PORT"]
         assert port.isdecimal() and 0 < int(port) <= 65535
         env["FH_EVIDENCE_PORT"] = port

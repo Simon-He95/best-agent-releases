@@ -139,6 +139,7 @@ jobs:
         run: |
           mkdir -p "$FH_ROOT/raw" "$FH_ROOT/report"
           ln -s "$RUNNER_TEMP/frontier/runtime" "$FH_ROOT/runtime"
+          ln -s "$RUNNER_TEMP/frontier/pristine-index.js" "$FH_ROOT/pristine-index.js"
           ln -s "$RUNNER_TEMP/frontier/venv" "$FH_ROOT/venv"
           node scripts/frontierharness/prepare-profile.mjs >"$FH_ROOT/raw/profile.log" 2>&1
           bash scripts/frontierharness/run.sh
@@ -178,6 +179,7 @@ jobs:
         run: |
           mkdir -p "$FH_ROOT/raw" "$FH_ROOT/report"
           ln -s "$RUNNER_TEMP/frontier/runtime" "$FH_ROOT/runtime"
+          ln -s "$RUNNER_TEMP/frontier/pristine-index.js" "$FH_ROOT/pristine-index.js"
           ln -s "$RUNNER_TEMP/frontier/venv" "$FH_ROOT/venv"
           node scripts/frontierharness/prepare-profile.mjs >"$FH_ROOT/raw/profile.log" 2>&1
           bash scripts/frontierharness/run.sh

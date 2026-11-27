@@ -15,6 +15,10 @@ DEFAULT_OUTPUT_CAP = ARMS["short"]["output_cap"]
 def arm_environment(profile):
     arm = ARMS[profile]
     env = dict(arm.get("env") or {})
+    if profile == "short-private-evidence":
+        port = os.environ["FH_EVIDENCE_PORT"]
+        assert port.isdecimal() and 0 < int(port) <= 65535
+        env["FH_EVIDENCE_PORT"] = port
     if arm["output_cap"] != DEFAULT_OUTPUT_CAP:
         env["BEST_AGENT_BENCHMARK_OUTPUT_CAP"] = str(arm["output_cap"])
     return "".join(f"{key}={value} " for key, value in sorted(env.items()))

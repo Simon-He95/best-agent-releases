@@ -30,3 +30,12 @@ replace_once(
     ...(benchmarkModel ? { maxOutputTokens: benchmarkOutputCap } : {}),
     apiKey: selectedApiKey,""",
 )
+
+replace_once(
+    "v3-run-options.ts",
+    "    connection: oauthConnection,\n    // A pinned id is admitted",
+    """    connection: oauthConnection,
+    // The benchmark relay serves one model. Its record set has no alternate child model.
+    ...(benchmarkModel ? { records: [{ id: providerConfig.model, type: "chat" }] } : {}),
+    // A pinned id is admitted""",
+)

@@ -3,6 +3,7 @@ import json
 import os
 from collections import defaultdict
 from datetime import datetime
+from hashlib import sha256
 from pathlib import Path
 
 root = Path(os.environ["FH_ROOT"])
@@ -46,9 +47,24 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     failures_by_run = {}
     terminal_runs = []
     terminal = None
-    trace = path.parent / "agent/best-agent-evidence.jsonl"
+    mounted_trace = path.parent / "agent/best-agent-evidence.jsonl"
+    private = arm == "short-private-evidence"
+    trace = (root / "raw/private-evidence" / path.parent.name / mounted_trace.name
+             if private else mounted_trace)
+    if private and requests:
+        assert not mounted_trace.exists(), "Evidence remained visible in the task log mount"
+        assert trace.is_file(), "Runner-side evidence is missing"
+    prefix = sha256()
     if trace.exists():
         for line in trace.open("rb"):
+            if private:
+                if not line.endswith(b"\n"):
+                    break
+                if b'"type":"footer"' in line[:100]:
+                    footer = json.loads(line)
+                    assert footer["prefixSha256"] == prefix.hexdigest(), "Evidence stream hash mismatch"
+                else:
+                    prefix.update(line)
             if not any(marker in line[:130] for marker in (
                 b'"type":"header"', b'"type":"model-failure-diagnostic"',
                 b'"type":"terminal-snapshot"',

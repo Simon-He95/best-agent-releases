@@ -9,6 +9,11 @@
     "output_cap": 32768,
     "effort": "max"
   },
+  "short-private-evidence-audit": {
+    "instruction": "prompt-readonly-audit.txt",
+    "output_cap": 32768,
+    "effort": "max"
+  },
   "short-cap128k": {
     "instruction": "short.txt",
     "output_cap": 131072,

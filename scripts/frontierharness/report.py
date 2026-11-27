@@ -48,7 +48,7 @@ for path in sorted((root / "raw/jobs").glob("*/*/result.json")):
     terminal_runs = []
     terminal = None
     mounted_trace = path.parent / "agent/best-agent-evidence.jsonl"
-    private = arm == "short-private-evidence"
+    private = arm in ("short-private-evidence", "short-private-evidence-audit")
     trace = (root / "raw/private-evidence" / path.parent.name / mounted_trace.name
              if private else mounted_trace)
     if private and requests:

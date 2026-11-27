@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -20,6 +21,14 @@ def arm_environment(profile):
 
 
 class Candidate(BestAgent):
+    async def run(self, instruction, environment, context):
+        try:
+            await super().run(instruction, environment, context)
+        except asyncio.CancelledError:
+            tag = self.logs_dir.parent.name
+            (Path(os.environ["FH_AB_DIR"]) / "cutoff" / tag).touch()
+            raise
+
     async def install(self, environment):
         arm_env = arm_environment(os.environ["FH_PROFILE"])
         if arm_env:

@@ -15,7 +15,7 @@ DEFAULT_OUTPUT_CAP = ARMS["short"]["output_cap"]
 def arm_environment(profile):
     arm = ARMS[profile]
     env = dict(arm.get("env") or {})
-    if profile in ("short-private-evidence", "short-private-evidence-directory-discovery"):
+    if profile in ("short-private-evidence", "short-private-evidence-runtime-alias"):
         port = os.environ["FH_EVIDENCE_PORT"]
         assert port.isdecimal() and 0 < int(port) <= 65535
         env["FH_EVIDENCE_PORT"] = port
@@ -37,8 +37,10 @@ class Candidate(BestAgent):
         arm_env = arm_environment(os.environ["FH_PROFILE"])
         if arm_env:
             arm_env = "env " + arm_env
-        await self.exec_as_root(environment, r"""set -eu
-cat > /usr/local/bin/best-agent <<'SH'
+        alias = ""
+        if os.environ["FH_PROFILE"] == "short-private-evidence-runtime-alias":
+            alias = "mkdir -p /opt\nln -sT /var/lib/best-agent-runtime /opt/best-agent\n"
+        await self.exec_as_root(environment, "set -eu\n" + alias + r"""cat > /usr/local/bin/best-agent <<'SH'
 #!/bin/sh
 PATH="/opt/best-agent/bin:$PATH"
 export PATH
@@ -50,6 +52,11 @@ exec /opt/best-agent/bin/best-agent "$@"
 SH
 chmod 0755 /usr/local/bin/best-agent
 best-agent --version
+export PATH="/opt/best-agent/bin:$PATH"
+node --version
+npm --version
+npx --version
+pnpm --version
 """)
 
     async def _upload_provider_config(self, environment, provider, model_id):

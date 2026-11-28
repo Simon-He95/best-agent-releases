@@ -9,8 +9,8 @@
     "output_cap": 32768,
     "effort": "max"
   },
-  "short-private-evidence-directory-discovery": {
-    "instruction": "prompt-directory-discovery.txt",
+  "short-private-evidence-runtime-alias": {
+    "instruction": "short.txt",
     "output_cap": 32768,
     "effort": "max"
   },

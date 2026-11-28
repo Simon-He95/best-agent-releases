@@ -8,6 +8,7 @@ chess-best-move
 circuit-fibsqrt
 code-from-image
 constraints-scheduling
+dna-assembly
 embedding-drift-monitor
 filter-js-from-html
 fix-code-vulnerability
